@@ -1,0 +1,6 @@
+PyQt6>=6.6.0
+requests>=2.31.0
+websocket-client>=1.6.0
+python-socketio>=5.10.0
+pyinstaller>=6.0.0
+
