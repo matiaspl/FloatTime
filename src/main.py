@@ -19,6 +19,7 @@ from logger import get_logger, DEBUG_LOGGING
 # Application modules
 from config import Config
 from timer_widget import TimerWidget
+from timer_controls import TimerControlOverlay
 from tray_manager import TrayIconManager
 
 logger = get_logger(__name__)
@@ -68,6 +69,47 @@ class FloatTimeWindow(QMainWindow):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
 
+        # On-hover timer control overlay (positioned at bottom)
+        self.controls_overlay = TimerControlOverlay(self)
+        self.controls_overlay.hide()
+        self._overlay_hide_timer = QTimer(self)
+        self._overlay_hide_timer.setSingleShot(True)
+        self._overlay_hide_timer.timeout.connect(self._hide_controls_overlay)
+        self._connect_controls_overlay()
+
+    def _connect_controls_overlay(self):
+        """Connect overlay buttons to Ontime client control API."""
+        def do_start():
+            if self.client:
+                self.client.start_timer()
+        def do_pause():
+            if self.client:
+                self.client.pause_timer()
+        def do_reload():
+            if self.client:
+                self.client.reload_timer()
+        def do_add_minute():
+            if self.client:
+                self.client.add_time_ms(60000)
+        def do_remove_minute():
+            if self.client:
+                self.client.remove_time_ms(60000)
+        self.controls_overlay.start_clicked.connect(do_start)
+        self.controls_overlay.pause_clicked.connect(do_pause)
+        self.controls_overlay.restart_clicked.connect(do_reload)
+        self.controls_overlay.add_minute_clicked.connect(do_add_minute)
+        self.controls_overlay.remove_minute_clicked.connect(do_remove_minute)
+
+    def _hide_controls_overlay(self):
+        self.controls_overlay.hide()
+
+    def _position_controls_overlay(self):
+        """Position overlay at bottom of window."""
+        w, h = self.width(), self.height()
+        ow = self.controls_overlay.sizeHint().width()
+        oh = self.controls_overlay.sizeHint().height()
+        self.controls_overlay.setGeometry((w - ow) // 2, h - oh - 4, ow, oh)
+
     def setup_shortcuts(self):
         for key, func in [("Ctrl+Q", self.quit_application), ("Ctrl+W", self.quit_application), ("Escape", self.hide)]:
             QShortcut(QKeySequence(key), self).activated.connect(func)
@@ -100,6 +142,21 @@ class FloatTimeWindow(QMainWindow):
                     action.setCheckable(extra[0])
                     action.setChecked(extra[1])
                 action.triggered.connect(func)
+                if text == "Reset Size":
+                    # Insert Timer submenu before Reset Size
+                    timer_menu = QMenu("Timer", self)
+                    for label, fn in [
+                        ("Start", self.timer_control_start),
+                        ("Pause", self.timer_control_pause),
+                        ("Restart", self.timer_control_reload),
+                        ("+1 min", self.timer_control_add_minute),
+                        ("\u2212 1 min", self.timer_control_remove_minute),
+                    ]:
+                        a = QAction(label, self)
+                        a.triggered.connect(fn)
+                        timer_menu.addAction(a)
+                    menu.addMenu(timer_menu)
+                    menu.addSeparator()
                 menu.addAction(action)
         
         menu.exec(self.mapToGlobal(pos))
@@ -157,6 +214,26 @@ class FloatTimeWindow(QMainWindow):
     def reset_window_size(self):
         self.resize(300, 150)
         self.config.set_window_size(300, 150)
+
+    def timer_control_start(self):
+        if self.client:
+            self.client.start_timer()
+
+    def timer_control_pause(self):
+        if self.client:
+            self.client.pause_timer()
+
+    def timer_control_reload(self):
+        if self.client:
+            self.client.reload_timer()
+
+    def timer_control_add_minute(self):
+        if self.client:
+            self.client.add_time_ms(60000)
+
+    def timer_control_remove_minute(self):
+        if self.client:
+            self.client.remove_time_ms(60000)
 
     def show_window(self):
         self.show()
@@ -228,7 +305,19 @@ class FloatTimeWindow(QMainWindow):
             self._updating_fonts = True
             self.timer_widget.update_font_sizes(self.width(), self.height())
             self._updating_fonts = False
+        self._position_controls_overlay()
         super().resizeEvent(event)
+
+    def enterEvent(self, event):
+        self._overlay_hide_timer.stop()
+        self._position_controls_overlay()
+        self.controls_overlay.show()
+        self.controls_overlay.raise_()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._overlay_hide_timer.start(300)
+        super().leaveEvent(event)
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton: self.quit_application()

@@ -2,7 +2,7 @@
 import requests
 import json
 from typing import Optional, Dict, Any, Callable
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 from dataclasses import dataclass, field
 from logger import get_logger
 
@@ -44,16 +44,15 @@ class OntimeClient:
         self.server_url = server_url.rstrip('/')
         self.update_callback = update_callback
         self.running = False
-        self.thread = None
         self.ws_thread = None
         self.sio = None
         self.ws = None
         self.stop_event = Event()
         self.last_timer_data: Optional[TimerData] = None
         self.last_known_timer_type: Optional[str] = None
-        self.poll_interval = 0.5
         self.use_websocket = use_websocket and (SOCKETIO_AVAILABLE or WEBSOCKET_AVAILABLE)
         self.websocket_connected = False
+        self._ws_send_lock = Lock()
     
     def _parse_data(self, raw_data: Dict[str, Any]) -> Optional[TimerData]:
         """Unified parser for Ontime API responses."""
@@ -139,19 +138,6 @@ class OntimeClient:
             except Exception as e:
                 logger.error(f"Error in update callback: {e}")
 
-    def _fetch_http(self) -> Optional[TimerData]:
-        """Fetch data via HTTP polling."""
-        endpoints = ['/api/timer', '/api/status', '/api/ontime']
-        for endpoint in endpoints:
-            try:
-                url = f"{self.server_url}{endpoint}"
-                response = requests.get(url, timeout=2)
-                if response.status_code == 200:
-                    return self._parse_data(response.json())
-            except (requests.RequestException, json.JSONDecodeError):
-                continue
-        return None
-
     def _socketio_loop(self):
         """Socket.IO connection and event loop."""
         self.sio = socketio.Client()
@@ -211,14 +197,6 @@ class OntimeClient:
         except Exception as e:
             logger.error(f"WebSocket loop error: {e}")
 
-    def _poll_loop(self):
-        """Fallback HTTP polling loop."""
-        while not self.stop_event.is_set():
-            if not self.websocket_connected:
-                data = self._fetch_http()
-                if data: self._notify(data)
-            self.stop_event.wait(self.poll_interval)
-
     def start(self):
         if self.running: return
         self.running = True
@@ -227,16 +205,12 @@ class OntimeClient:
         if self.use_websocket:
             self.ws_thread = Thread(target=self._ws_loop, daemon=True)
             self.ws_thread.start()
-        
-        self.thread = Thread(target=self._poll_loop, daemon=True)
-        self.thread.start()
 
     def stop(self):
         self.running = False
         self.stop_event.set()
         if self.sio: self.sio.disconnect()
         if self.ws: self.ws.close()
-        if self.thread: self.thread.join(timeout=1)
         if self.ws_thread: self.ws_thread.join(timeout=1)
 
     def test_connection(self) -> bool:
@@ -244,3 +218,35 @@ class OntimeClient:
             return requests.get(self.server_url, timeout=2).status_code < 500
         except:
             return False
+
+    def _send_ws(self, msg: dict) -> bool:
+        """Send a control message over WebSocket. Thread-safe. Returns True if sent."""
+        if not WEBSOCKET_AVAILABLE or not self.ws or not self.websocket_connected:
+            return False
+        with self._ws_send_lock:
+            try:
+                self.ws.send(json.dumps(msg))
+                return True
+            except Exception as e:
+                logger.error(f"WebSocket send error: {e}")
+                return False
+
+    def start_timer(self) -> bool:
+        """Start the loaded event."""
+        return self._send_ws({"tag": "start"})
+
+    def pause_timer(self) -> bool:
+        """Pause the running timer."""
+        return self._send_ws({"tag": "pause"})
+
+    def reload_timer(self) -> bool:
+        """Reload/restart the current event."""
+        return self._send_ws({"tag": "reload"})
+
+    def add_time_ms(self, ms: int) -> bool:
+        """Add time to the running timer (e.g. 60000 for +1 minute)."""
+        return self._send_ws({"tag": "addtime", "payload": {"add": ms}})
+
+    def remove_time_ms(self, ms: int) -> bool:
+        """Remove time from the running timer (e.g. 60000 for -1 minute)."""
+        return self._send_ws({"tag": "addtime", "payload": {"remove": ms}})

@@ -78,6 +78,28 @@ class TrayIconManager(QObject):
         menu.addAction(self.display_mode_action)
         
         menu.addSeparator()
+
+        # Timer controls submenu
+        timer_menu = QMenu("Timer", menu)
+        start_action = QAction("Start", self.window)
+        start_action.triggered.connect(self.window.timer_control_start)
+        timer_menu.addAction(start_action)
+        pause_action = QAction("Pause", self.window)
+        pause_action.triggered.connect(self.window.timer_control_pause)
+        timer_menu.addAction(pause_action)
+        reload_action = QAction("Restart", self.window)
+        reload_action.triggered.connect(self.window.timer_control_reload)
+        timer_menu.addAction(reload_action)
+        timer_menu.addSeparator()
+        add_min_action = QAction("+1 min", self.window)
+        add_min_action.triggered.connect(self.window.timer_control_add_minute)
+        timer_menu.addAction(add_min_action)
+        remove_min_action = QAction("\u2212 1 min", self.window)
+        remove_min_action.triggered.connect(self.window.timer_control_remove_minute)
+        timer_menu.addAction(remove_min_action)
+        menu.addMenu(timer_menu)
+
+        menu.addSeparator()
         
         # Reset size action
         reset_size_action = QAction("Reset Size", self.window)
