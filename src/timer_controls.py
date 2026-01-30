@@ -43,23 +43,23 @@ class TopControlOverlay(QWidget):
         layout.setSpacing(8)
         layout.setContentsMargins(8, 6, 8, 6)
 
-        # +1 and -1 buttons
+        # -1 and +1 buttons (order: -1 on left, +1 on right)
+        remove_btn = QPushButton("-1")
+        remove_btn.setStyleSheet(_BTN_STYLE)
+        remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        remove_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        remove_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        remove_btn.clicked.connect(self.remove_minute_clicked.emit)
+
         add_btn = QPushButton("+1")
         add_btn.setStyleSheet(_BTN_STYLE)
         add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         add_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        add_btn.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        add_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         add_btn.clicked.connect(self.add_minute_clicked.emit)
 
-        remove_btn = QPushButton("\u2212 1")  # Minus 1
-        remove_btn.setStyleSheet(_BTN_STYLE)
-        remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        remove_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        remove_btn.setFont(QFont("Arial", 10, QFont.Weight.Bold))
-        remove_btn.clicked.connect(self.remove_minute_clicked.emit)
-
-        layout.addWidget(add_btn)
         layout.addWidget(remove_btn)
+        layout.addWidget(add_btn)
 
         self.setStyleSheet(_OVERLAY_STYLE)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -85,9 +85,12 @@ class BottomControlOverlay(QWidget):
         layout.setSpacing(8)
         layout.setContentsMargins(8, 6, 8, 6)
 
+        _icon_font = QFont("Arial", 14, QFont.Weight.Bold)
+
         # Previous event
         prev_btn = QPushButton("\u2039")  # Single left angle
         prev_btn.setStyleSheet(_BTN_STYLE)
+        prev_btn.setFont(_icon_font)
         prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         prev_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         prev_btn.clicked.connect(self.previous_clicked.emit)
@@ -95,18 +98,21 @@ class BottomControlOverlay(QWidget):
         # Play, Pause, Restart
         play_btn = QPushButton("\u25B6")  # Play triangle
         play_btn.setStyleSheet(_BTN_STYLE)
+        play_btn.setFont(_icon_font)
         play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         play_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         play_btn.clicked.connect(self.start_clicked.emit)
 
         pause_btn = QPushButton("\u23F8")  # Pause
         pause_btn.setStyleSheet(_BTN_STYLE)
+        pause_btn.setFont(_icon_font)
         pause_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         pause_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         pause_btn.clicked.connect(self.pause_clicked.emit)
 
         restart_btn = QPushButton("\u21BB")  # Restart / redo
         restart_btn.setStyleSheet(_BTN_STYLE)
+        restart_btn.setFont(_icon_font)
         restart_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         restart_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         restart_btn.clicked.connect(self.restart_clicked.emit)
@@ -114,6 +120,7 @@ class BottomControlOverlay(QWidget):
         # Next event
         next_btn = QPushButton("\u203A")  # Single right angle
         next_btn.setStyleSheet(_BTN_STYLE)
+        next_btn.setFont(_icon_font)
         next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         next_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         next_btn.clicked.connect(self.next_clicked.emit)

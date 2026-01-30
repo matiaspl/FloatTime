@@ -23,7 +23,9 @@ Configuration options:
 - `display_mode` – Display mode: `"timer"` or `"clock"`
 - `background_visible` – Background visibility (true/false)
 - `window_size` – Window size: `[width, height]`
+- `window_position` – Window position: `[x, y]` (restored on start; reset to default if outside available screen area)
 - `locked` – Window lock state (true/false)
+- `addtime_affects_event_duration` – When true, +/- 1 min changes the current event's duration only (no addtime); when false, +/- 1 min adds/removes time from the running timer (true/false)
 
 You can edit this file manually or use the app’s context menu.
 
@@ -39,29 +41,37 @@ You can edit this file manually or use the app’s context menu.
 ### Window interaction
 - **Dragging** – Move the window by dragging with the mouse
 - **Resizing** – Resize from all four corners
+- **Screen guard** – Window is clamped to the available screen geometry (stays on-screen; works across multiple monitors)
+- **Position memory** – Last window position is saved and restored on start; if outside current screen area, position is reset to default
 - **Smart cursor** – Cursor changes when hovering over corners
 - **Auto-scaling** – Timer text scales to fit the window (binary search for optimal font size)
+- **HiDPI** – Layout and fonts refresh when the window moves between screens with different DPI
+- **Windows: no focus steal** – Clicking the overlay does not steal focus from other apps (e.g. PowerPoint stays active)
 
 ### Timer controls (hover overlays)
-- **Top edge** – **+1** and **−1** (add/subtract minute), centered
-- **Bottom edge** – **▶ Start**, **⏸ Pause**, **↻ Restart**, centered
+- **Top edge** – **−1** and **+1** (subtract/add minute), centered
+- **Bottom edge** – **‹ Previous**, **▶ Start**, **⏸ Pause**, **↻ Restart**, **› Next** (previous/next event, play, pause, restart, next event)
 - Both groups appear when hovering over the window
+- **Next** and **Previous** do not wrap (disabled at last/first event)
 
 ### Display
 - **Display modes** – Switch between Ontime timer and system clock
 - **Timer types** – Supports `count up`, `count down`, `clock`, `none`
+- **Idle state** – When no event is loaded, shows `--:--` (dimmed) instead of the last timer value
 - **Threshold colors** – Text color changes:
   - **White** – Normal
   - **Orange** (`#FFA528`) – Warning threshold
   - **Red** (`#FA5656`) – Danger/overtime
 - **Transparent background** – Option to hide background for a fully transparent window
+- **Custom font** – Timer and clock use Iosevka Fixed Curly from `fonts/` (fallback: Arial)
+- **Timer centering** – Timer text is centered (integral seconds; countdown uses ceiling so the first second is not skipped)
 
 ### Shortcuts and persistence
-- **Saved settings** – Server URL, window size, display mode, background visibility
+- **Saved settings** – Server URL, window size, window position, display mode, background visibility, locked state, +/- 1 affects event duration
 - **Shortcuts**:
   - `Ctrl+Q` / `Ctrl+W` – Quit
   - `Escape` – Hide window
-  - **Double-click** – Hide window
+  - **Double-click** – Reload current event and start (does not hide)
 
 ## Requirements
 
@@ -106,7 +116,8 @@ On first run you’ll be asked for the Ontime server URL (e.g. `http://localhost
 - **Lock in Place** – Lock position (disable drag and resize)
 - **Show Clock / Show Timer** – Switch between timer and system clock
 - **Reset Size** – Restore default window size
-- **Timer** (submenu) – Start, Pause, Restart, +1 min, −1 min
+- **+/- 1 changes event length** – When checked, +/- 1 min changes the current event's duration only (no running-timer addtime)
+- **Timer** (submenu) – Previous event, Next event, Start, Pause, Restart, +1 min, −1 min, Blink, Blackout
 - **Quit** – Exit the app
 
 ## Building an executable
@@ -128,7 +139,7 @@ Output in `dist/floattime/` (onedir mode). On macOS: `dist/floattime/floattime.a
 3. Timer updates in real time via WebSocket.
 4. Drag the window to move it (when not locked).
 5. Hover over a corner and drag to resize.
-6. Hover over the window to show +1/−1 at the top and Start/Pause/Restart at the bottom.
+6. Hover over the window to show −1/+1 at the top and Previous/Start/Pause/Restart/Next at the bottom.
 
 ### Resizing
 
@@ -155,12 +166,13 @@ FloatTime/
 │   ├── main.py              # Main application
 │   ├── ontime_client.py     # Ontime API client (WebSocket)
 │   ├── timer_widget.py      # Timer display widget
-│   ├── timer_controls.py    # Control overlays (top: +1/−1, bottom: play/pause/restart)
+│   ├── timer_controls.py    # Control overlays (top: −1/+1, bottom: prev/play/pause/restart/next)
 │   ├── tray_manager.py      # System tray icon and menu
 │   ├── config.py            # Configuration
-│   ├── logger.py             # Logging (FLOATTIME_DEBUG)
+│   ├── logger.py            # Logging (FLOATTIME_DEBUG)
 │   └── ui/
-│       └── config_dialog.py  # Config dialog
+│       └── config_dialog.py # Config dialog
+├── fonts/                    # Custom font (Iosevka Fixed Curly)
 ├── hooks/                    # PyInstaller hooks (e.g. PyQt6)
 ├── requirements.txt
 ├── build.py                  # Build script (venv + PyInstaller)
@@ -177,21 +189,27 @@ The app connects to Ontime via WebSockets.
 
 - **Endpoint:** `ws://<server-url>/ws` (derived from configured `server_url` by replacing `http` with `ws` and appending `/ws`).
 - **On connect:** the client sends `{"tag": "poll"}` to request initial/runtime data.
-- **Incoming messages:** JSON with optional `tag` and `payload`; the app uses `payload` (or the whole message) as Ontime runtime data.
+- **Incoming messages:** JSON with `tag` or `type` and `payload`; the app uses `payload` (or the whole message) as Ontime runtime data. Granular updates (`type`: `ontime-eventNow`, `ontime-timer`, etc.) are unwrapped so the payload is parsed.
 - **Control (send):**
-  - `{"tag": "start"}` – start the timer
+  - `{"tag": "start"}` – start the loaded event
   - `{"tag": "pause"}` – pause
   - `{"tag": "reload"}` – reload/restart current event
+  - `{"tag": "load", "payload": "next"}` – load next event (no wrap at last event)
+  - `{"tag": "load", "payload": "previous"}` – load previous event
   - `{"tag": "addtime", "payload": {"add": ms}}` – add time (e.g. 60000 for +1 min)
   - `{"tag": "addtime", "payload": {"remove": ms}}` – remove time (e.g. 60000 for −1 min)
+  - `{"tag": "change", "payload": {"<event-id>": {"duration": ms}}}` – change current event duration (when “+/- 1 changes event length” is on)
+  - `{"tag": "message", "payload": {"timer": {"blink": true/false}}}` – blink
+  - `{"tag": "message", "payload": {"timer": {"blackout": true/false}}}` – blackout
 
 ### Data format (parsed from server)
 
 The app parses Ontime-style JSON:
 
-- **Top-level or nested:** `timer` (object or value), `timerType`, `currentEvent` / `eventNow`, `nextEvent` / `loaded` / `next`, `status`, `running`.
-- **Timer object:** `current`, `remaining`, `elapsed`, `state`, `running`, `timerType`, `timeWarning`, `timeDanger`, `duration`.
-- **Event:** `title`, `timerType`, `timeWarning`, `timeDanger`, `duration`.
+- **Top-level or nested:** `timer` (object or value), `timerType`, `eventNow` / `currentEvent`, `eventNext` / `nextEvent`, `rundown`, `status`, `running`.
+- **Rundown:** `selectedEventIndex`, `numEvents` – used to enable/disable next and previous (no wrap).
+- **Timer object:** `current`, `remaining`, `elapsed`, `playback`, `state`, `running`, `timerType`, `timeWarning`, `timeDanger`, `duration`.
+- **Event:** `id`, `title`, `timerType`, `timeWarning`, `timeDanger`, `duration`, `timeStart`.
 
 ## Debugging
 

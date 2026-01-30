@@ -82,6 +82,36 @@ def _set_macos_window_level(window, floating: bool):
         traceback.print_exc()
 
 
+def _set_windows_no_activate(window):
+    """Set WS_EX_NOACTIVATE on Windows so clicking the overlay does not steal focus from other apps."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        GWL_EXSTYLE = -20
+        WS_EX_NOACTIVATE = 0x08000000
+
+        wh = window.windowHandle()
+        if not wh:
+            return
+        hwnd = int(wh.winId())
+        if not hwnd:
+            return
+        user32 = ctypes.windll.user32
+        # Extended style is 32-bit; use c_void_p for pointer-sized HWND/LONG_PTR on 32/64 bit
+        user32.GetWindowLongPtrW.restype = ctypes.c_void_p
+        user32.GetWindowLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        user32.SetWindowLongPtrW.restype = ctypes.c_void_p
+        user32.SetWindowLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+        ex_style = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
+        ex_style = ex_style or 0
+        new_style = (ex_style if isinstance(ex_style, int) else getattr(ex_style, 'value', 0) or 0) | WS_EX_NOACTIVATE
+        user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style)
+    except Exception as e:
+        logger.debug("Could not set WS_EX_NOACTIVATE: %s", e)
+
+
 class TimerUpdateSignal(QObject):
     timer_updated = pyqtSignal(object) # Using object for TimerData
 
@@ -99,6 +129,7 @@ class FloatTimeWindow(QMainWindow):
         self._updating_fonts = False
         self._blink_on = False
         self._blackout_on = False
+        self._screen_changed_connected = False
         
         # Debounce timer for resize events (smoother resizing)
         self._resize_timer = QTimer(self)
@@ -127,6 +158,7 @@ class FloatTimeWindow(QMainWindow):
         self.setMinimumSize(150, 100)
         size = self.config.get_window_size() or (300, 150)
         self.resize(*size)
+        self._restore_window_position()
         
         self.setMouseTracking(True)
         self.timer_widget.setMouseTracking(True)
@@ -159,15 +191,21 @@ class FloatTimeWindow(QMainWindow):
                 self.client.reload_timer()
         def do_add_minute():
             if self.client:
-                self.client.add_time_ms(60000)
+                if self.config.get_addtime_affects_event_duration():
+                    self.client.change_current_event_duration(60000)
+                else:
+                    self.client.add_time_ms(60000)
         def do_remove_minute():
             if self.client:
-                self.client.remove_time_ms(60000)
+                if self.config.get_addtime_affects_event_duration():
+                    self.client.change_current_event_duration(-60000)
+                else:
+                    self.client.remove_time_ms(60000)
         def do_previous_event():
-            if self.client:
+            if self.client and self.client.last_timer_data and self.client.last_timer_data.has_previous_event:
                 self.client.load_previous_event()
         def do_next_event():
-            if self.client:
+            if self.client and self.client.last_timer_data and self.client.last_timer_data.has_next_event:
                 self.client.load_next_event()
         
         # Connect bottom overlay
@@ -178,8 +216,8 @@ class FloatTimeWindow(QMainWindow):
         self.bottom_overlay.next_clicked.connect(do_next_event)
         
         # Connect top overlay
-        self.top_overlay.add_minute_clicked.connect(do_add_minute)
         self.top_overlay.remove_minute_clicked.connect(do_remove_minute)
+        self.top_overlay.add_minute_clicked.connect(do_add_minute)
 
     def _hide_controls_overlays(self):
         """Hide both control overlays."""
@@ -217,7 +255,7 @@ class FloatTimeWindow(QMainWindow):
             ("Lock in Place", self.toggle_locked, True, self.is_locked),
             (None, None),
             ("Show Clock" if self.timer_widget.display_mode == 'timer' else "Show Timer", self.toggle_display_mode, True, self.timer_widget.display_mode == 'clock'),
-            ("+/- 1 also change event length", self.toggle_addtime_affects_event_duration, True, self.config.get_addtime_affects_event_duration()),
+            ("+/- 1 changes event length", self.toggle_addtime_affects_event_duration, True, self.config.get_addtime_affects_event_duration()),
             (None, None),
             ("Reset Size", self.reset_window_size),
             (None, None),
@@ -330,12 +368,12 @@ class FloatTimeWindow(QMainWindow):
             self.client.reload_timer()
 
     def timer_control_previous_event(self):
-        if self.client:
-            self.client.start_previous_event()
+        if self.client and self.client.last_timer_data and self.client.last_timer_data.has_previous_event:
+            self.client.load_previous_event()
 
     def timer_control_next_event(self):
-        if self.client:
-            self.client.start_next_event()
+        if self.client and self.client.last_timer_data and self.client.last_timer_data.has_next_event:
+            self.client.load_next_event()
 
     def timer_control_blink(self):
         self._blink_on = not self._blink_on
@@ -351,15 +389,17 @@ class FloatTimeWindow(QMainWindow):
 
     def timer_control_add_minute(self):
         if self.client:
-            self.client.add_time_ms(60000)
             if self.config.get_addtime_affects_event_duration():
                 self.client.change_current_event_duration(60000)
+            else:
+                self.client.add_time_ms(60000)
 
     def timer_control_remove_minute(self):
         if self.client:
-            self.client.remove_time_ms(60000)
             if self.config.get_addtime_affects_event_duration():
                 self.client.change_current_event_duration(-60000)
+            else:
+                self.client.remove_time_ms(60000)
 
     def toggle_addtime_affects_event_duration(self):
         value = not self.config.get_addtime_affects_event_duration()
@@ -401,6 +441,34 @@ class FloatTimeWindow(QMainWindow):
         x = max(available.left(), min(pos.x(), available.right() - w))
         y = max(available.top(), min(pos.y(), available.bottom() - h))
         return QPoint(x, y)
+
+    def _position_in_available_geometry(self, x: int, y: int, w: int, h: int) -> bool:
+        """Return True if the rectangle (x, y, w, h) fits within at least one screen's available geometry."""
+        for screen in QGuiApplication.screens():
+            if screen is None:
+                continue
+            available = screen.availableGeometry()
+            if x >= available.left() and y >= available.top() and x + w <= available.right() and y + h <= available.bottom():
+                return True
+        return False
+
+    def _default_window_position(self) -> QPoint:
+        """Return default position (top-left of primary screen's available geometry)."""
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            available = screen.availableGeometry()
+            return QPoint(available.left(), available.top())
+        return QPoint(50, 50)
+
+    def _restore_window_position(self):
+        """Restore window position from config; if outside available area, use default."""
+        saved = self.config.get_window_position()
+        w, h = self.width(), self.height()
+        if saved and self._position_in_available_geometry(saved[0], saved[1], w, h):
+            self.move(saved[0], saved[1])
+        else:
+            default = self._default_window_position()
+            self.move(default)
 
     def mousePressEvent(self, event):
         if self.is_locked or event.button() != Qt.MouseButton.LeftButton: return
@@ -445,6 +513,7 @@ class FloatTimeWindow(QMainWindow):
 
     def mouseReleaseEvent(self, event):
         self.config.set_window_size(self.width(), self.height())
+        self.config.set_window_position(self.x(), self.y())
         self.resize_corner = None
 
     def _apply_font_resize(self):
@@ -470,6 +539,27 @@ class FloatTimeWindow(QMainWindow):
         if sys.platform == "darwin":
             on_top = bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
             _set_macos_window_level(self, on_top)
+        if sys.platform == "win32":
+            _set_windows_no_activate(self)
+        # React to HiDPI / screen changes when window moves between monitors
+        wh = self.windowHandle()
+        if wh and not self._screen_changed_connected:
+            wh.screenChanged.connect(self._on_screen_changed)
+            self._screen_changed_connected = True
+
+    def _on_screen_changed(self, screen):
+        """Called when window moves to another screen (e.g. HiDPI to non-HiDPI). Refresh layout."""
+        if screen is None:
+            return
+        QTimer.singleShot(0, self._refresh_after_screen_change)
+
+    def _refresh_after_screen_change(self):
+        """Update fonts and overlay positions after screen/DPR change."""
+        self._position_control_overlays()
+        if not self._updating_fonts:
+            self._updating_fonts = True
+            self.timer_widget.update_font_sizes(self.width(), self.height())
+            self._updating_fonts = False
 
     def enterEvent(self, event):
         self._overlay_hide_timer.stop()
@@ -494,7 +584,11 @@ class FloatTimeWindow(QMainWindow):
         self.hide()
 
 def main():
-    os.environ['QT_ENABLE_HIGHDPI_SCALING'] = '0'
+    # Enable HiDPI scaling so the app looks correct on high-DPI and mixed-DPI setups
+    os.environ.setdefault('QT_ENABLE_HIGHDPI_SCALING', '1')
+    attr = getattr(Qt, 'ApplicationAttribute', None)
+    if attr is not None and hasattr(attr, 'AA_UseHighDpiPixmaps'):
+        QApplication.setAttribute(attr.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     window = FloatTimeWindow()

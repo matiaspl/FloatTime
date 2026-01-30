@@ -78,7 +78,7 @@ class TrayIconManager(QObject):
         menu.addAction(self.display_mode_action)
 
         # +/- 1 also change event length
-        self.addtime_affects_duration_action = QAction("+/- 1 also change event length", self.window)
+        self.addtime_affects_duration_action = QAction("+/- 1 changes event length", self.window)
         self.addtime_affects_duration_action.setCheckable(True)
         self.addtime_affects_duration_action.setChecked(self.window.config.get_addtime_affects_event_duration())
         self.addtime_affects_duration_action.triggered.connect(self.window.toggle_addtime_affects_event_duration)
