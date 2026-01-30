@@ -13,7 +13,7 @@ else:
 
 from PyQt6.QtWidgets import QApplication, QMainWindow, QMenu, QDialog
 from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QPointF
-from PyQt6.QtGui import QAction, QKeySequence, QShortcut, QCursor
+from PyQt6.QtGui import QAction, QKeySequence, QShortcut, QCursor, QGuiApplication
 from logger import get_logger, DEBUG_LOGGING
 
 # Application modules
@@ -23,6 +23,64 @@ from timer_controls import TimerControlOverlay
 from tray_manager import TrayIconManager
 
 logger = get_logger(__name__)
+
+# macOS: NSWindow level constants (Qt's WindowStaysOnTopHint is often ignored)
+NSNormalWindowLevel = 0
+NSFloatingWindowLevel = 3
+NSStatusWindowLevel = 25  # More aggressive "always on top"
+
+
+def _set_macos_window_level(window, floating: bool):
+    """Set NSWindow level on macOS so the window actually stays on top of other apps.
+    
+    Requires pyobjc-framework-Cocoa: pip install pyobjc-framework-Cocoa
+    """
+    if sys.platform != "darwin":
+        return
+    try:
+        # Use PyObjC to get NSWindow from NSView pointer
+        import objc
+        from ctypes import c_void_p
+        from AppKit import NSView
+        
+        qwindow = window.windowHandle()
+        print(f"[macOS] windowHandle = {qwindow}")
+        if not qwindow:
+            print("[macOS] ERROR: windowHandle is None")
+            return
+        
+        # winId() returns the NSView* pointer as an integer
+        nsview_ptr = int(qwindow.winId())
+        print(f"[macOS] NSView pointer = {hex(nsview_ptr)}")
+        
+        # Convert the pointer to an NSView object using PyObjC
+        nsview = objc.objc_object(c_void_p=nsview_ptr)
+        print(f"[macOS] NSView object = {nsview}")
+        
+        # Get the NSWindow from the NSView
+        nswindow = nsview.window()
+        print(f"[macOS] NSWindow = {nswindow}")
+        
+        if not nswindow:
+            print("[macOS] ERROR: Could not get NSWindow from NSView")
+            return
+        
+        # Set window level using PyObjC
+        level = NSStatusWindowLevel if floating else NSNormalWindowLevel
+        print(f"[macOS] Setting window level to {level} (floating={floating})")
+        nswindow.setLevel_(level)
+        nswindow.setHidesOnDeactivate_(False)  # Don't hide when losing focus
+        print(f"[macOS] ✓ Window level set successfully")
+        
+    except ImportError as e:
+        print(f"[macOS] PyObjC not available: {e}")
+        print("[macOS] Install with: pip install pyobjc-framework-Cocoa")
+        print("[macOS] Falling back to Qt's WindowStaysOnTopHint (may not work across apps)")
+    except Exception as e:
+        print(f"[macOS] ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+
 
 class TimerUpdateSignal(QObject):
     timer_updated = pyqtSignal(object) # Using object for TimerData
@@ -307,6 +365,12 @@ class FloatTimeWindow(QMainWindow):
             self._updating_fonts = False
         self._position_controls_overlay()
         super().resizeEvent(event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if sys.platform == "darwin":
+            on_top = bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
+            _set_macos_window_level(self, on_top)
 
     def enterEvent(self, event):
         self._overlay_hide_timer.stop()

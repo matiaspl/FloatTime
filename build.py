@@ -1,14 +1,107 @@
 """Build script for creating executable with PyInstaller."""
-import PyInstaller.__main__
-import sys
 import os
 import shutil
+import subprocess
+import sys
+import venv
 from pathlib import Path
+
+# Project root (directory containing build.py)
+PROJECT_ROOT = Path(__file__).resolve().parent
+BUILD_VENV_DIR = PROJECT_ROOT / ".build_venv"
+
+
+def _in_build_venv():
+    """True if current interpreter is the project's build venv."""
+    try:
+        return Path(sys.prefix).resolve() == BUILD_VENV_DIR.resolve()
+    except Exception:
+        return False
+
+
+def _current_env_has_deps():
+    """True if current environment has all build dependencies."""
+    try:
+        import PyQt6.QtCore  # noqa: F401
+        import websocket  # noqa: F401
+        import socketio  # noqa: F401
+        import engineio  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def ensure_build_venv():
+    """
+    Use a dedicated .build_venv so we don't pollute the user's environment.
+    If not already in that venv and current env lacks deps, create venv,
+    install requirements, and re-exec this script with the venv's Python.
+    """
+    if _in_build_venv():
+        return
+    if _current_env_has_deps():
+        return
+
+    # Create venv if needed
+    if not BUILD_VENV_DIR.exists():
+        print(f"Creating build venv at {BUILD_VENV_DIR}...")
+        venv.create(BUILD_VENV_DIR, with_pip=True)
+
+    if os.name == "nt":
+        venv_python = BUILD_VENV_DIR / "Scripts" / "python.exe"
+    else:
+        venv_python = BUILD_VENV_DIR / "bin" / "python"
+
+    if not venv_python.exists():
+        raise RuntimeError(f"Build venv Python not found: {venv_python}")
+
+    requirements = PROJECT_ROOT / "requirements.txt"
+    if not requirements.exists():
+        raise FileNotFoundError(f"requirements.txt not found in {PROJECT_ROOT}")
+
+    print("Installing build dependencies into .build_venv...")
+    subprocess.run(
+        [str(venv_python), "-m", "pip", "install", "-r", str(requirements)],
+        check=True,
+        cwd=str(PROJECT_ROOT),
+    )
+
+    # Re-exec this script with the venv's Python
+    build_script = Path(__file__).resolve()
+    os.execv(str(venv_python), [str(venv_python), str(build_script)] + sys.argv[1:])
+
+
+def check_build_dependencies():
+    """Verify all packages required for the frozen app are installed. Exit with clear message if not."""
+    missing = []
+    try:
+        import PyQt6.QtCore  # noqa: F401
+    except ImportError:
+        missing.append("PyQt6")
+    try:
+        import websocket  # noqa: F401  # from websocket-client package
+    except ImportError:
+        missing.append("websocket-client")
+    try:
+        import socketio  # noqa: F401  # from python-socketio (pulls in engineio)
+        import engineio  # noqa: F401
+    except ImportError:
+        missing.append("python-socketio")
+    if missing:
+        print("Missing required packages for build:", ", ".join(missing))
+        print("Install them with: pip install -r requirements.txt")
+        print("Or: pip install " + " ".join(missing))
+        sys.exit(1)
+
 
 def build():
     """Build the application executable."""
+    import PyInstaller.__main__
+
+    check_build_dependencies()
+
     app_name = "floattime"
-    
+
     # Determine separator for --add-data (Windows uses ;, Unix uses :)
     separator = ";" if sys.platform == "win32" else ":"
     
@@ -154,5 +247,6 @@ def build():
     print(f"Cleaned up unnecessary PyQt6 plugins and multimedia DLLs.")
 
 if __name__ == "__main__":
+    ensure_build_venv()
     build()
 
