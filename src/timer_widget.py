@@ -98,11 +98,16 @@ class TimerWidget(QWidget):
             target = self.clock_label if self.display_mode == 'clock' else self.timer_label
             if target.text() != time_str:
                 target.setText(time_str)
-                self.update_font_sizes()
+                # Font size should stay constant for clock (always HH:MM:SS)
+                # Only update on first display
+                if not hasattr(self, '_clock_font_set'):
+                    self.update_font_sizes()
+                    self._clock_font_set = True
             if self.display_mode == 'clock':
                 self.timer_label.setText("")
         else:
             self.clock_label.setText("")
+            self._clock_font_set = False
 
     def set_display_mode(self, mode: str):
         """Set display mode: 'timer' or 'clock'."""
@@ -130,7 +135,7 @@ class TimerWidget(QWidget):
         if self.display_mode != 'timer':
             return
 
-        needs_resize = False
+        old_text = self.timer_label.text()
         
         if data.timer_type == 'none':
             self.timer_label.setVisible(False)
@@ -142,9 +147,7 @@ class TimerWidget(QWidget):
             self.timer_label.setVisible(True)
             if data.timer_ms is not None:
                 formatted = self._format_time(data.timer_ms)
-                if self.timer_label.text() != formatted:
-                    self.timer_label.setText(formatted)
-                    needs_resize = True
+                self.timer_label.setText(formatted)
                 
                 # Color thresholds
                 color = "#ffffff"
@@ -157,9 +160,10 @@ class TimerWidget(QWidget):
             elif data.status == 'stopped' or data.timer_type == 'none':
                 self.timer_label.setText("--:--")
                 self.timer_label.setStyleSheet("color: #ffffff;")
-                needs_resize = True
 
-        if needs_resize:
+        # Only resize if text length changed (e.g., MM:SS -> HH:MM:SS)
+        new_text = self.timer_label.text()
+        if len(new_text) != len(old_text):
             self.update_font_sizes()
 
     def _format_time(self, ms: float) -> str:
@@ -182,33 +186,51 @@ class TimerWidget(QWidget):
         return "#ffffff"
 
     def update_font_sizes(self, width: int = None, height: int = None):
-        """Intelligently scale fonts to fit window."""
+        """Dynamically scale fonts to fill the window - text adapts to window size."""
         width = width or self.width()
         height = height or self.height()
         
-        if width < 50 or height < 50: return
+        if width < 50 or height < 50:
+            return
 
-        avail_w = width - (self.base_margin * 2)
-        avail_h = height - (self.base_margin * 2)
+        # Use layout margins (from setup_ui)
+        margin = self.base_margin
+        avail_w = width - (2 * margin)
+        avail_h = height - (2 * margin)
         
-        scale = min(avail_w / (self.base_width - 40), avail_h / (self.base_height - 40))
-        
-        def refine(label, base_size, max_h, bold=True):
-            if not label.isVisible() or not label.text(): return
-            size = max(8, int(base_size * scale))
-            font = QFont("Arial", size, QFont.Weight.Bold if bold else QFont.Weight.Normal)
-            metrics = QFontMetrics(font)
+        def calculate_optimal_font_size(label, bold=True):
+            """Find largest font size that fits the window."""
+            if not label.isVisible() or not label.text():
+                return
             
-            # Ensure fits both width and height
-            while (metrics.horizontalAdvance(label.text()) > avail_w * 0.98 or 
-                   metrics.height() > max_h) and size > 8:
-                size -= 1
-                font.setPointSize(size)
+            text = label.text()
+            min_size, max_size = 8, 300  # Search range
+            
+            # Binary search for optimal font size
+            best_size = min_size
+            for _ in range(20):  # More iterations for better precision
+                mid_size = (min_size + max_size) // 2
+                font = QFont("Arial", mid_size, QFont.Weight.Bold if bold else QFont.Weight.Normal)
                 metrics = QFontMetrics(font)
+                
+                text_width = metrics.horizontalAdvance(text)
+                text_height = metrics.height()
+                
+                # Try to use as much space as possible (98% to avoid clipping)
+                fits = text_width <= avail_w * 0.90 and text_height <= avail_h * 0.98
+                
+                if fits:
+                    best_size = mid_size
+                    min_size = mid_size + 1  # Try even larger
+                else:
+                    max_size = mid_size - 1  # Too big, go smaller
+            
+            # Set the font with the best size found
+            font = QFont("Arial", best_size, QFont.Weight.Bold if bold else QFont.Weight.Normal)
             label.setFont(font)
             
-        refine(self.timer_label, self.base_timer_font_size, avail_h)
-        refine(self.clock_label, self.base_clock_font_size, avail_h)
+        calculate_optimal_font_size(self.timer_label, bold=True)
+        calculate_optimal_font_size(self.clock_label, bold=True)
 
     def mouseMoveEvent(self, event: QMouseEvent):
         """Forward events to parent for cursor handling."""
