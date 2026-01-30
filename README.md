@@ -79,7 +79,7 @@ You can edit this file manually or use the app’s context menu.
 - Ontime server (local or remote)
 - **macOS:** optional `pyobjc-framework-Cocoa` for reliable always-on-top (`pip install pyobjc-framework-Cocoa`)
 
-## Installation
+## Building from source
 
 1. Install dependencies:
 ```bash
