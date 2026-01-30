@@ -1,10 +1,12 @@
-# FloatTime - Ontime Overlay Timer
+# FloatTime – Ontime Overlay Timer
 
-Lekka aplikacja desktopowa wyświetlająca timer z Ontime w trybie always-on-top. Idealna do wyświetlania timera podczas prezentacji PowerPoint lub innych aplikacji.
+Lightweight desktop app that shows an Ontime timer in always-on-top mode. Ideal for displaying the timer over PowerPoint or other applications.
 
-## Konfiguracja
+**Polish documentation:** [README.pl.md](README.pl.md)
 
-Aplikacja przechowuje konfigurację w pliku JSON w katalogu użytkownika:
+## Configuration
+
+The app stores configuration in a JSON file in the user directory:
 
 **Windows:**
 ```
@@ -16,204 +18,210 @@ C:\Users\<username>\.floattime\config.json
 ~/.floattime/config.json
 ```
 
-Plik konfiguracyjny zawiera następujące ustawienia:
-- `server_url` - URL serwera Ontime
-- `display_mode` - Tryb wyświetlania: `"timer"` lub `"clock"`
-- `background_visible` - Widoczność tła (true/false)
-- `window_size` - Rozmiar okna: `[szerokość, wysokość]`
-- `locked` - Stan zablokowania okna (true/false)
+Configuration options:
+- `server_url` – Ontime server URL
+- `display_mode` – Display mode: `"timer"` or `"clock"`
+- `background_visible` – Background visibility (true/false)
+- `window_size` – Window size: `[width, height]`
+- `locked` – Window lock state (true/false)
 
-Możesz edytować ten plik ręcznie lub użyć menu kontekstowego aplikacji.
+You can edit this file manually or use the app’s context menu.
 
-## Funkcje
+## Features
 
-### Podstawowe
-- **Always-on-top** - Timer zawsze pozostaje na wierzchu innych okien
-- **Lekka** - Zbudowana w Python + PyQt6 (bez Electrona)
-- **Cross-platform** - Działa na Windows, macOS i Linux
-- **Konfiguracja URL** - Wystarczy podać adres serwera Ontime
-- **System tray** - Działa w tle z ikoną w zasobniku systemowym
+### Core
+- **Always-on-top** – Timer stays above other windows (on macOS via native NSWindow level when PyObjC is installed)
+- **Lightweight** – Python + PyQt6 (no Electron)
+- **Cross-platform** – Windows, macOS, Linux
+- **URL configuration** – Just set the Ontime server URL
+- **System tray** – Runs in the background with a tray icon
 
-### Interakcja z oknem
-- **Przeciąganie** - Można przesuwać okno myszką
-- **Zmiana rozmiaru** - Można skalować okno z wszystkich 4 rogów
-- **Inteligentny kursor** - Kursor automatycznie zmienia się przy najechaniu na rogi okna
-- **Automatyczne skalowanie** - Czcionki i layout automatycznie dostosowują się do rozmiaru okna
+### Window interaction
+- **Dragging** – Move the window by dragging with the mouse
+- **Resizing** – Resize from all four corners
+- **Smart cursor** – Cursor changes when hovering over corners
+- **Auto-scaling** – Timer text scales to fit the window (binary search for optimal font size)
 
-### Wyświetlanie
-- **Tryby wyświetlania** - Przełączanie między timerem Ontime a zegarem systemowym
-- **Obsługa typów timerów** - Automatyczne dostosowanie do typów: `count up`, `count down`, `clock`, `none`
-- **Kolory progów** - Dynamiczna zmiana koloru tekstu:
-  - **Biały** - Normalny stan
-  - **Pomarańczowy** (`#FFA528`) - Próg ostrzegawczy (warning)
-  - **Czerwony** (`#FA5656`) - Próg niebezpieczeństwa (danger/overtime)
-- **Przezroczyste tło** - Opcja wyłączenia tła dla całkowicie przezroczystego okna
+### Timer controls (hover overlays)
+- **Top edge** – **+1** and **−1** (add/subtract minute), centered
+- **Bottom edge** – **▶ Start**, **⏸ Pause**, **↻ Restart**, centered
+- Both groups appear when hovering over the window
 
-### Konfiguracja i zapis
-- **Zapis ustawień** - Aplikacja zapisuje:
-  - URL serwera Ontime
-  - Rozmiar okna
-  - Tryb wyświetlania (timer/clock)
-  - Widoczność tła
-- **Skróty klawiszowe**:
-  - `Ctrl+Q` - Zamknij aplikację
-  - `Ctrl+W` - Zamknij aplikację
-  - `Escape` - Ukryj okno
-  - **Podwójne kliknięcie** - Zamknij aplikację
+### Display
+- **Display modes** – Switch between Ontime timer and system clock
+- **Timer types** – Supports `count up`, `count down`, `clock`, `none`
+- **Threshold colors** – Text color changes:
+  - **White** – Normal
+  - **Orange** (`#FFA528`) – Warning threshold
+  - **Red** (`#FA5656`) – Danger/overtime
+- **Transparent background** – Option to hide background for a fully transparent window
 
-## Wymagania
+### Shortcuts and persistence
+- **Saved settings** – Server URL, window size, display mode, background visibility
+- **Shortcuts**:
+  - `Ctrl+Q` / `Ctrl+W` – Quit
+  - `Escape` – Hide window
+  - **Double-click** – Quit
 
-- Python 3.9 lub nowszy
-- Serwer Ontime działający lokalnie lub zdalnie
+## Requirements
 
-## Instalacja
+- Python 3.9+
+- Ontime server (local or remote)
+- **macOS:** optional `pyobjc-framework-Cocoa` for reliable always-on-top (`pip install pyobjc-framework-Cocoa`)
 
-1. Zainstaluj zależności:
+## Installation
+
+1. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Uruchom aplikację:
+2. Run the app:
 ```bash
 python run.py
 ```
 
-Lub bezpośrednio:
+Or directly:
 ```bash
 python src/main.py
 ```
 
-## Konfiguracja
+## Configuration
 
-### Pierwsze uruchomienie
+### First run
 
-Przy pierwszym uruchomieniu aplikacja poprosi o podanie URL serwera Ontime (np. `http://localhost:4001`).
+On first run you’ll be asked for the Ontime server URL (e.g. `http://localhost:4001`).
 
-### Zmiana konfiguracji
+### Changing settings
 
-Możesz zmienić konfigurację przez:
-- **Menu system tray** - Kliknij prawym przyciskiem na ikonę w system tray i wybierz "Configure..."
-- **Menu kontekstowe okna** - Kliknij prawym przyciskiem na okno timera
+- **System tray** – Right-click the tray icon → “Configure...”
+- **Context menu** – Right-click the timer window
 
-### Dostępne opcje
+### Menu options
 
-- **Configure...** - Zmiana URL serwera Ontime
-- **Show/Hide** - Pokazuj/ukryj okno
-- **Always on Top** - Przełącz tryb always-on-top
-- **Show Background** - Przełącz widoczność tła (przezroczyste/nieprzezroczyste)
-- **Show Clock** - Przełącz między timerem a zegarem systemowym
-- **Quit** - Zamknij aplikację
+- **Configure...** – Set Ontime server URL
+- **Show / Hide** – Show or hide the window
+- **Always on Top** – Toggle always-on-top
+- **Show Background** – Toggle background (transparent/solid)
+- **Lock in Place** – Lock position (disable drag and resize)
+- **Show Clock / Show Timer** – Switch between timer and system clock
+- **Reset Size** – Restore default window size
+- **Timer** (submenu) – Start, Pause, Restart, +1 min, −1 min
+- **Quit** – Exit the app
 
-## Kompilacja do pliku wykonywalnego
+## Building an executable
 
-Aby utworzyć pojedynczy plik wykonywalny:
+The build script creates an isolated `.build_venv`, installs dependencies there, and runs PyInstaller so your main Python environment stays clean.
 
 ```bash
 python build.py
 ```
 
-Plik wykonywalny zostanie utworzony w katalogu `dist/`.
+Output in `dist/floattime/` (onedir mode). On macOS: `dist/floattime/floattime.app` or `dist/floattime/floattime`.
 
-## Użycie
+## Usage
 
-### Podstawowe operacje
+### Basics
 
-1. **Uruchom aplikację** - Aplikacja pojawi się w system tray
-2. **Skonfiguruj URL** - Jeśli jeszcze nie skonfigurowano, podaj adres serwera Ontime
-3. **Timer automatycznie się aktualizuje** - Dane są pobierane przez WebSocket/Socket.IO w czasie rzeczywistym
-4. **Przesuwaj okno** - Kliknij i przeciągnij okno, aby je przesunąć
-5. **Zmień rozmiar** - Najedź na róg okna (kursor się zmieni) i przeciągnij, aby zmienić rozmiar
+1. Start the app – it appears in the system tray.
+2. Set the Ontime URL if prompted.
+3. Timer updates in real time via WebSocket.
+4. Drag the window to move it (when not locked).
+5. Hover over a corner and drag to resize.
+6. Hover over the window to show +1/−1 at the top and Start/Pause/Restart at the bottom.
 
-### Zmiana rozmiaru okna
+### Resizing
 
-- Najedź myszką na którykolwiek z 4 rogów okna
-- Kursor automatycznie zmieni się na odpowiedni kształt (↖↘ lub ↗↙)
-- Kliknij i przeciągnij, aby zmienić rozmiar
-- Czcionki i layout automatycznie dostosują się do nowego rozmiaru
+- Hover over any of the four corners; the cursor changes (↖↘ or ↗↙).
+- Click and drag to resize.
+- Timer text automatically scales to use ~98% of the available space.
 
-### Przełączanie trybów
+### Display modes
 
-- **Timer** - Wyświetla timer z Ontime (domyślnie)
-- **Clock** - Wyświetla zegar systemowy
-- Przełączanie przez menu system tray lub menu kontekstowe
+- **Timer** – Ontime timer (default)
+- **Clock** – System clock
+- Toggle via tray or context menu.
 
-### Kolory progów
+### Threshold colors
 
-Aplikacja automatycznie zmienia kolor tekstu timera w zależności od wartości:
+- **Count down:** White (normal) → Orange (warning) → Red (danger/overtime)
+- **Count up:** White (within time) → Orange (over duration)
 
-- **Count Down Timer**:
-  - Biały - Normalny stan (powyżej progów)
-  - Pomarańczowy - Osiągnięto próg ostrzegawczy (`timeWarning`)
-  - Czerwony - Osiągnięto próg niebezpieczeństwa (`timeDanger`) lub przekroczono czas (overtime)
-
-- **Count Up Timer**:
-  - Biały - Normalny stan (w ramach czasu)
-  - Pomarańczowy - Przekroczono czas (`duration`)
-
-## Struktura projektu
+## Project structure
 
 ```
-floattime/
+FloatTime/
 ├── src/
-│   ├── main.py              # Główna aplikacja
-│   ├── ontime_client.py     # Klient API Ontime (WebSocket/Socket.IO)
-│   ├── timer_widget.py      # Widget wyświetlający timer
-│   ├── config.py            # Zarządzanie konfiguracją
+│   ├── main.py              # Main application
+│   ├── ontime_client.py     # Ontime API client (WebSocket)
+│   ├── timer_widget.py      # Timer display widget
+│   ├── timer_controls.py    # Control overlays (top: +1/−1, bottom: play/pause/restart)
+│   ├── tray_manager.py      # System tray icon and menu
+│   ├── config.py            # Configuration
+│   ├── logger.py             # Logging (FLOATTIME_DEBUG)
 │   └── ui/
-│       └── config_dialog.py # Dialog konfiguracji
-├── requirements.txt         # Zależności
-├── build.py                 # Skrypt kompilacji
-├── run.py                   # Skrypt uruchomienia
-└── README.md               # Ten plik
+│       └── config_dialog.py  # Config dialog
+├── hooks/                    # PyInstaller hooks (e.g. PyQt6)
+├── requirements.txt
+├── build.py                  # Build script (venv + PyInstaller)
+├── run.py
+├── README.md                 # This file (English)
+└── README.pl.md              # Polish documentation
 ```
 
-## API Ontime
+## Ontime API
 
-Aplikacja łączy się z serwerem Ontime używając:
+The app connects to Ontime via WebSockets.
 
 ### WebSocket
-- Endpoint: `ws://<server-url>/ws`
-- Protokół: WebSocket z formatem wiadomości `{"tag": "...", "payload": ...}`
-- Obsługiwane tagi: `poll`, `runtime-data`, `start`, `pause`, `stop`, `load`, `change`
 
-### Socket.IO (fallback)
-- Endpoint: `<server-url>` (Socket.IO client)
-- Automatyczne wykrywanie i przełączanie między protokołami
+- **Endpoint:** `ws://<server-url>/ws` (derived from configured `server_url` by replacing `http` with `ws` and appending `/ws`).
+- **On connect:** the client sends `{"tag": "poll"}` to request initial/runtime data.
+- **Incoming messages:** JSON with optional `tag` and `payload`; the app uses `payload` (or the whole message) as Ontime runtime data.
+- **Control (send):**
+  - `{"tag": "start"}` – start the timer
+  - `{"tag": "pause"}` – pause
+  - `{"tag": "reload"}` – reload/restart current event
+  - `{"tag": "addtime", "payload": {"add": ms}}` – add time (e.g. 60000 for +1 min)
+  - `{"tag": "addtime", "payload": {"remove": ms}}` – remove time (e.g. 60000 for −1 min)
 
-### HTTP Polling (fallback)
-- Endpointy: `/api/timer`, `/api/status`, `/api/ontime`
-- Używane tylko gdy WebSocket/Socket.IO nie są dostępne
+### Data format (parsed from server)
 
-### Format danych
+The app parses Ontime-style JSON:
 
-Aplikacja oczekuje danych w formacie Ontime:
-- `timer` - Wartość timera w milisekundach
-- `timerType` - Typ timera: `"count up"`, `"count down"`, `"clock"`, `"none"`
-- `currentEvent` / `eventNow` - Aktualne wydarzenie z `timerType`, `timeWarning`, `timeDanger`, `duration`
-- `timerDict` - Pełny obiekt timera z `current`, `elapsed`, `remaining`
+- **Top-level or nested:** `timer` (object or value), `timerType`, `currentEvent` / `eventNow`, `nextEvent` / `loaded` / `next`, `status`, `running`.
+- **Timer object:** `current`, `remaining`, `elapsed`, `state`, `running`, `timerType`, `timeWarning`, `timeDanger`, `duration`.
+- **Event:** `title`, `timerType`, `timeWarning`, `timeDanger`, `duration`.
 
-## Debugowanie
+## Debugging
 
-Aby włączyć szczegółowe logowanie, zmień wartość `DEBUG_LOGGING = True` w:
-- `src/main.py`
-- `src/timer_widget.py`
-- `src/ontime_client.py`
+Enable verbose logging with:
 
-## Rozwiązywanie problemów
+```bash
+export FLOATTIME_DEBUG=true   # Linux/macOS
+set FLOATTIME_DEBUG=true      # Windows (cmd)
+```
 
-### Timer nie aktualizuje się
-- Sprawdź, czy serwer Ontime działa i jest dostępny pod podanym adresem
-- Sprawdź logi aplikacji (włącz `DEBUG_LOGGING`)
-- Upewnij się, że port nie jest zablokowany przez firewall
+Then run the app; logs appear in the console.
 
-### Okno nie jest widoczne
-- Sprawdź system tray - aplikacja może być ukryta
-- Kliknij prawym przyciskiem na ikonę w tray i wybierz "Show"
+## Troubleshooting
 
-### Kolory nie zmieniają się
-- Upewnij się, że w Ontime są ustawione progi `timeWarning` i `timeDanger` dla wydarzenia
-- Sprawdź, czy typ timera jest poprawnie wykrywany (włącz `DEBUG_LOGGING`)
+**Timer not updating**
+- Check that the Ontime server is running and reachable at the configured URL.
+- Enable `FLOATTIME_DEBUG=true` and check logs.
+- Ensure the port isn’t blocked by a firewall.
 
-## Licencja
+**Window not visible**
+- Check the system tray; the window may be hidden. Right-click the tray icon → “Show”.
 
-MIT
+**Always-on-top not working on macOS**
+- Install: `pip install pyobjc-framework-Cocoa`
+- Ensure “Always on Top” is enabled in the menu.
+
+**Colors not changing**
+- In Ontime, set `timeWarning` and `timeDanger` for the event.
+- Use `FLOATTIME_DEBUG=true` to verify timer type detection.
+
+## License
+
+GNU GPL — see [LICENSE.md](LICENSE.md).
