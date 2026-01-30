@@ -116,3 +116,11 @@ class Config:
     def set_addtime_affects_event_duration(self, value: bool) -> bool:
         """Save whether +/- 1 min also changes current event's duration."""
         return self.set('addtime_affects_event_duration', bool(value))
+
+    def get_hover_controls_enabled(self) -> bool:
+        """Get whether on-hover control overlays are enabled."""
+        return self.get('hover_controls_enabled', True)
+
+    def set_hover_controls_enabled(self, value: bool) -> bool:
+        """Save whether on-hover control overlays are enabled."""
+        return self.set('hover_controls_enabled', bool(value))

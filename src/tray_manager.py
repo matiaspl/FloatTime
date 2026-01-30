@@ -67,6 +67,13 @@ class TrayIconManager(QObject):
         self.locked_action.setChecked(self.window.is_locked)
         self.locked_action.triggered.connect(self.window.toggle_locked)
         menu.addAction(self.locked_action)
+
+        # On-hover controls toggle
+        self.hover_controls_action = QAction("On-hover controls", self.window)
+        self.hover_controls_action.setCheckable(True)
+        self.hover_controls_action.setChecked(self.window.config.get_hover_controls_enabled())
+        self.hover_controls_action.triggered.connect(self.window.toggle_hover_controls)
+        menu.addAction(self.hover_controls_action)
         
         menu.addSeparator()
         
@@ -180,6 +187,7 @@ class TrayIconManager(QObject):
         self.addtime_affects_duration_action.setChecked(
             self.window.config.get_addtime_affects_event_duration()
         )
+        self.hover_controls_action.setChecked(self.window.config.get_hover_controls_enabled())
         self.blink_action.setChecked(self.window._blink_on)
         self.blackout_action.setChecked(self.window._blackout_on)
 

@@ -137,6 +137,13 @@ class FloatTimeWindow(QMainWindow):
         self._resize_timer.timeout.connect(self._apply_font_resize)
         self._pending_resize = None
         
+        # Drag/resize state (set in mousePressEvent; must exist if move arrives before press)
+        self.resize_corner = None
+        self._drag_or_resize_started = False
+        self.initial_pos = QPoint(0, 0)
+        self.initial_win_pos = QPoint(0, 0)
+        self.initial_size = QSize(0, 0)
+        
         self.setup_ui()
         self.tray_manager = TrayIconManager(self)
         
@@ -253,6 +260,7 @@ class FloatTimeWindow(QMainWindow):
             ("Always on Top", self.toggle_always_on_top, True, bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)),
             ("Show Background", self.toggle_background, True, self.timer_widget.background_visible),
             ("Lock in Place", self.toggle_locked, True, self.is_locked),
+            ("On-hover controls", self.toggle_hover_controls, True, self.config.get_hover_controls_enabled()),
             (None, None),
             ("Show Clock" if self.timer_widget.display_mode == 'timer' else "Show Timer", self.toggle_display_mode, True, self.timer_widget.display_mode == 'clock'),
             ("+/- 1 changes event length", self.toggle_addtime_affects_event_duration, True, self.config.get_addtime_affects_event_duration()),
@@ -406,6 +414,13 @@ class FloatTimeWindow(QMainWindow):
         self.config.set_addtime_affects_event_duration(value)
         self.tray_manager.update_menu_states()
 
+    def toggle_hover_controls(self):
+        value = not self.config.get_hover_controls_enabled()
+        self.config.set_hover_controls_enabled(value)
+        if not value:
+            self._hide_controls_overlays()
+        self.tray_manager.update_menu_states()
+
     def show_window(self):
         self.show()
         self.raise_()
@@ -452,22 +467,24 @@ class FloatTimeWindow(QMainWindow):
                 return True
         return False
 
-    def _default_window_position(self) -> QPoint:
-        """Return default position (top-left of primary screen's available geometry)."""
+    def _default_window_position(self, w: int = 0, h: int = 0) -> QPoint:
+        """Return default position: centered on primary screen's available geometry."""
         screen = QGuiApplication.primaryScreen()
         if screen is not None:
             available = screen.availableGeometry()
-            return QPoint(available.left(), available.top())
+            x = available.left() + max(0, (available.width() - w) // 2)
+            y = available.top() + max(0, (available.height() - h) // 2)
+            return QPoint(x, y)
         return QPoint(50, 50)
 
     def _restore_window_position(self):
-        """Restore window position from config; if outside available area, use default."""
+        """Restore window position from config; if outside available area or no saved position, use default (centered)."""
         saved = self.config.get_window_position()
         w, h = self.width(), self.height()
         if saved and self._position_in_available_geometry(saved[0], saved[1], w, h):
             self.move(saved[0], saved[1])
         else:
-            default = self._default_window_position()
+            default = self._default_window_position(w, h)
             self.move(default)
 
     def mousePressEvent(self, event):
@@ -477,6 +494,7 @@ class FloatTimeWindow(QMainWindow):
         self.initial_pos = event.globalPosition().toPoint()
         self.initial_win_pos = self.pos()
         self.initial_size = self.size()
+        self._drag_or_resize_started = True
 
     def mouseMoveEvent(self, event):
         pos = event.position().toPoint()
@@ -484,6 +502,8 @@ class FloatTimeWindow(QMainWindow):
         self.setCursor(self._get_cursor(corner) if corner else Qt.CursorShape.ArrowCursor)
         
         if self.is_locked or not (event.buttons() & Qt.MouseButton.LeftButton): return
+        if not self._drag_or_resize_started:
+            return  # Move before press (e.g. first show); avoid using unset initial_* 
         
         delta = event.globalPosition().toPoint() - self.initial_pos
         if self.resize_corner:
@@ -515,6 +535,7 @@ class FloatTimeWindow(QMainWindow):
         self.config.set_window_size(self.width(), self.height())
         self.config.set_window_position(self.x(), self.y())
         self.resize_corner = None
+        self._drag_or_resize_started = False
 
     def _apply_font_resize(self):
         """Apply the pending font size update."""
@@ -563,11 +584,12 @@ class FloatTimeWindow(QMainWindow):
 
     def enterEvent(self, event):
         self._overlay_hide_timer.stop()
-        self._position_control_overlays()
-        self.top_overlay.show()
-        self.top_overlay.raise_()
-        self.bottom_overlay.show()
-        self.bottom_overlay.raise_()
+        if self.config.get_hover_controls_enabled():
+            self._position_control_overlays()
+            self.top_overlay.show()
+            self.top_overlay.raise_()
+            self.bottom_overlay.show()
+            self.bottom_overlay.raise_()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
