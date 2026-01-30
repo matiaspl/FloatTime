@@ -71,7 +71,7 @@ Możesz edytować ten plik ręcznie lub użyć menu kontekstowego aplikacji.
 - **Skróty klawiszowe**:
   - `Ctrl+Q` / `Ctrl+W` - Zamknij aplikację
   - `Escape` - Ukryj okno
-  - **Podwójne kliknięcie** - Przeładuj bieżące wydarzenie i start (nie ukrywa okna)
+  - **Podwójne kliknięcie** - Przeładuj bieżące wydarzenie i start
 
 ## Wymagania
 

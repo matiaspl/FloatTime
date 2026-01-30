@@ -71,7 +71,7 @@ You can edit this file manually or use the app’s context menu.
 - **Shortcuts**:
   - `Ctrl+Q` / `Ctrl+W` – Quit
   - `Escape` – Hide window
-  - **Double-click** – Reload current event and start (does not hide)
+  - **Double-click** – Reload current event and start
 
 ## Requirements
 
