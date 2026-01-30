@@ -97,3 +97,11 @@ class Config:
     def set_locked(self, locked: bool) -> bool:
         """Save locked state."""
         return self.set('locked', bool(locked))
+
+    def get_addtime_affects_event_duration(self) -> bool:
+        """Get whether +/- 1 min also changes current event's duration."""
+        return self.get('addtime_affects_event_duration', False)
+
+    def set_addtime_affects_event_duration(self, value: bool) -> bool:
+        """Save whether +/- 1 min also changes current event's duration."""
+        return self.set('addtime_affects_event_duration', bool(value))

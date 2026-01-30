@@ -27,6 +27,9 @@ class TimerWidget(QWidget):
         self.base_timer_font_size = 48
         self.base_clock_font_size = 36
         
+        self._blink_timer = QTimer(self)
+        self._blink_timer.timeout.connect(self._blink_tick)
+        self._blink_visible = True
         self.setup_ui()
         self.setup_clock_timer()
     
@@ -166,6 +169,8 @@ class TimerWidget(QWidget):
         if len(new_text) != len(old_text):
             self.update_font_sizes()
 
+        self._apply_blink_blackout(data.blink, data.blackout)
+
     def _format_time(self, ms: float) -> str:
         """Format milliseconds to MM:SS or HH:MM:SS."""
         is_neg = ms < 0
@@ -174,6 +179,38 @@ class TimerWidget(QWidget):
         
         time_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
         return f"-{time_str}" if is_neg else time_str
+
+    def _apply_blink_blackout(self, blink: bool, blackout: bool):
+        """Apply blink and blackout state from Ontime message control (both toggle visibility)."""
+        if blackout:
+            self._blink_timer.stop()
+            self.timer_label.setVisible(False)
+            return
+        if not blink:
+            self._blink_timer.stop()
+            self._blink_visible = True
+            self.timer_label.setVisible(True)
+            if self.timer_data:
+                color = "#ffffff"
+                if self.timer_data.timer_type == 'count down' and self.timer_data.timer_ms is not None:
+                    color = self._get_timer_color_countdown(
+                        self.timer_data.timer_ms,
+                        self.timer_data.time_warning,
+                        self.timer_data.time_danger,
+                    )
+                elif self.timer_data.timer_type == 'count up' and self.timer_data.timer_ms is not None:
+                    color = self._get_timer_color_countup(self.timer_data.timer_ms, self.timer_data.duration)
+                self.timer_label.setStyleSheet(f"color: {color};")
+            return
+        # Blink: toggle opacity
+        if not self._blink_timer.isActive():
+            self._blink_visible = True
+            self._blink_timer.start(500)
+
+    def _blink_tick(self):
+        """Toggle timer label visibility for blink effect."""
+        self._blink_visible = not self._blink_visible
+        self.timer_label.setVisible(self._blink_visible)
 
     def _get_timer_color_countdown(self, ms: float, warning: Optional[float], danger: Optional[float]) -> str:
         if ms < 0: return "#FA5656" # Red

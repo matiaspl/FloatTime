@@ -3,7 +3,7 @@ import requests
 import json
 from typing import Optional, Dict, Any, Callable
 from threading import Thread, Event, Lock
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -34,6 +34,8 @@ class TimerData:
     time_warning: Optional[float] = None
     time_danger: Optional[float] = None
     duration: Optional[float] = None
+    blink: bool = False
+    blackout: bool = False
     timer_dict: Dict[str, Any] = field(default_factory=dict)
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
@@ -50,6 +52,10 @@ class OntimeClient:
         self.stop_event = Event()
         self.last_timer_data: Optional[TimerData] = None
         self.last_known_timer_type: Optional[str] = None
+        self.last_current_event_id: Optional[str] = None
+        self.last_current_event_duration: Optional[float] = None
+        self.last_blink: bool = False
+        self.last_blackout: bool = False
         self.use_websocket = use_websocket and (SOCKETIO_AVAILABLE or WEBSOCKET_AVAILABLE)
         self.websocket_connected = False
         self._ws_send_lock = Lock()
@@ -113,6 +119,36 @@ class OntimeClient:
         elif next_event:
             next_title = str(next_event)
 
+        # Store current event id and duration for change_current_event_duration
+        if isinstance(current_event, dict):
+            eid = current_event.get('id')
+            if eid is not None:
+                self.last_current_event_id = str(eid)
+            dur = current_event.get('duration')
+            if dur is not None:
+                self.last_current_event_duration = float(dur)
+
+        # Message/timer display state (blink, blackout) - from message.timer or top-level timer message
+        msg_block = raw_data.get('message') if isinstance(raw_data.get('message'), dict) else None
+        timer_msg = (msg_block.get('timer') or raw_data.get('timer')) if isinstance(msg_block, dict) else raw_data.get('timer')
+        if isinstance(timer_msg, dict):
+            if 'blink' in timer_msg:
+                self.last_blink = bool(timer_msg['blink'])
+            if 'blackout' in timer_msg:
+                self.last_blackout = bool(timer_msg['blackout'])
+        # Also handle payload that is message state only (tag "message" response)
+        if isinstance(raw_data, dict) and 'timer' in raw_data and isinstance(raw_data.get('timer'), dict):
+            t = raw_data['timer']
+            if 'blink' in t:
+                self.last_blink = bool(t['blink'])
+            if 'blackout' in t:
+                self.last_blackout = bool(t['blackout'])
+
+        # Message-only payload: merge blink/blackout into last_timer_data so we don't reset the display
+        if not has_timer_data and self.last_timer_data is not None:
+            if not raw_data.get('currentEvent') and not raw_data.get('eventNow'):
+                return replace(self.last_timer_data, blink=self.last_blink, blackout=self.last_blackout)
+
         data = TimerData(
             timer_ms=timer_ms,
             timer_type=timer_type,
@@ -123,6 +159,8 @@ class OntimeClient:
             time_warning=current_event.get('timeWarning') or timer_dict.get('timeWarning'),
             time_danger=current_event.get('timeDanger') or timer_dict.get('timeDanger'),
             duration=current_event.get('duration') or timer_dict.get('duration'),
+            blink=self.last_blink,
+            blackout=self.last_blackout,
             timer_dict=timer_dict,
             raw_data=raw_data
         )
@@ -243,6 +281,14 @@ class OntimeClient:
         """Reload/restart the current event."""
         return self._send_ws({"tag": "reload"})
 
+    def load_next_event(self) -> bool:
+        """Load the next event (without starting)."""
+        return self._send_ws({"tag": "load", "payload": "next"})
+
+    def load_previous_event(self) -> bool:
+        """Load the previous event (without starting)."""
+        return self._send_ws({"tag": "load", "payload": "previous"})
+
     def add_time_ms(self, ms: int) -> bool:
         """Add time to the running timer (e.g. 60000 for +1 minute)."""
         return self._send_ws({"tag": "addtime", "payload": {"add": ms}})
@@ -250,3 +296,24 @@ class OntimeClient:
     def remove_time_ms(self, ms: int) -> bool:
         """Remove time from the running timer (e.g. 60000 for -1 minute)."""
         return self._send_ws({"tag": "addtime", "payload": {"remove": ms}})
+
+    def change_current_event_duration(self, delta_ms: int) -> bool:
+        """Change the current event's duration by delta_ms. Returns True if sent."""
+        if self.last_current_event_id is None or self.last_current_event_duration is None:
+            return False
+        new_duration = int(self.last_current_event_duration) + delta_ms
+        if new_duration < 0:
+            new_duration = 0
+        msg = {"tag": "change", "payload": {self.last_current_event_id: {"duration": new_duration}}}
+        if not self._send_ws(msg):
+            return False
+        self.last_current_event_duration = new_duration
+        return True
+
+    def set_timer_blackout(self, blackout: bool) -> bool:
+        """Set timer screen blackout on or off."""
+        return self._send_ws({"tag": "message", "payload": {"timer": {"blackout": blackout}}})
+
+    def set_timer_blink(self, blink: bool) -> bool:
+        """Set timer blink on or off."""
+        return self._send_ws({"tag": "message", "payload": {"timer": {"blink": blink}}})

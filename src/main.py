@@ -12,7 +12,7 @@ else:
     sys.path.insert(0, str(Path(__file__).parent))
 
 from PyQt6.QtWidgets import QApplication, QMainWindow, QMenu, QDialog
-from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QPointF
+from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QPointF, QPoint, QSize, QRect
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut, QCursor, QGuiApplication
 from logger import get_logger, DEBUG_LOGGING
 
@@ -97,6 +97,8 @@ class FloatTimeWindow(QMainWindow):
         
         self.is_locked = self.config.get_locked()
         self._updating_fonts = False
+        self._blink_on = False
+        self._blackout_on = False
         
         # Debounce timer for resize events (smoother resizing)
         self._resize_timer = QTimer(self)
@@ -161,11 +163,19 @@ class FloatTimeWindow(QMainWindow):
         def do_remove_minute():
             if self.client:
                 self.client.remove_time_ms(60000)
+        def do_previous_event():
+            if self.client:
+                self.client.load_previous_event()
+        def do_next_event():
+            if self.client:
+                self.client.load_next_event()
         
         # Connect bottom overlay
         self.bottom_overlay.start_clicked.connect(do_start)
         self.bottom_overlay.pause_clicked.connect(do_pause)
         self.bottom_overlay.restart_clicked.connect(do_reload)
+        self.bottom_overlay.previous_clicked.connect(do_previous_event)
+        self.bottom_overlay.next_clicked.connect(do_next_event)
         
         # Connect top overlay
         self.top_overlay.add_minute_clicked.connect(do_add_minute)
@@ -207,6 +217,7 @@ class FloatTimeWindow(QMainWindow):
             ("Lock in Place", self.toggle_locked, True, self.is_locked),
             (None, None),
             ("Show Clock" if self.timer_widget.display_mode == 'timer' else "Show Timer", self.toggle_display_mode, True, self.timer_widget.display_mode == 'clock'),
+            ("+/- 1 also change event length", self.toggle_addtime_affects_event_duration, True, self.config.get_addtime_affects_event_duration()),
             (None, None),
             ("Reset Size", self.reset_window_size),
             (None, None),
@@ -225,15 +236,23 @@ class FloatTimeWindow(QMainWindow):
                 if text == "Reset Size":
                     # Insert Timer submenu before Reset Size
                     timer_menu = QMenu("Timer", self)
-                    for label, fn in [
+                    for item in [
                         ("Start", self.timer_control_start),
                         ("Pause", self.timer_control_pause),
                         ("Restart", self.timer_control_reload),
+                        ("Previous event", self.timer_control_previous_event),
+                        ("Next event", self.timer_control_next_event),
                         ("+1 min", self.timer_control_add_minute),
                         ("-1 min", self.timer_control_remove_minute),
+                        ("Blink", self.timer_control_blink, True, lambda: self._blink_on),
+                        ("Blackout", self.timer_control_blackout, True, lambda: self._blackout_on),
                     ]:
+                        label, fn = item[0], item[1]
                         a = QAction(label, self)
                         a.triggered.connect(fn)
+                        if len(item) >= 4 and item[2]:
+                            a.setCheckable(True)
+                            a.setChecked(item[3]() if callable(item[3]) else item[3])
                         timer_menu.addAction(a)
                     menu.addMenu(timer_menu)
                     menu.addSeparator()
@@ -255,6 +274,9 @@ class FloatTimeWindow(QMainWindow):
         self.client.start()
 
     def on_timer_update(self, data):
+        self._blink_on = data.blink
+        self._blackout_on = data.blackout
+        self.tray_manager.update_menu_states()
         self.timer_widget.update_timer(data)
 
     def show_config_dialog(self):
@@ -307,13 +329,42 @@ class FloatTimeWindow(QMainWindow):
         if self.client:
             self.client.reload_timer()
 
+    def timer_control_previous_event(self):
+        if self.client:
+            self.client.start_previous_event()
+
+    def timer_control_next_event(self):
+        if self.client:
+            self.client.start_next_event()
+
+    def timer_control_blink(self):
+        self._blink_on = not self._blink_on
+        if self.client:
+            self.client.set_timer_blink(self._blink_on)
+        self.tray_manager.update_menu_states()
+
+    def timer_control_blackout(self):
+        self._blackout_on = not self._blackout_on
+        if self.client:
+            self.client.set_timer_blackout(self._blackout_on)
+        self.tray_manager.update_menu_states()
+
     def timer_control_add_minute(self):
         if self.client:
             self.client.add_time_ms(60000)
+            if self.config.get_addtime_affects_event_duration():
+                self.client.change_current_event_duration(60000)
 
     def timer_control_remove_minute(self):
         if self.client:
             self.client.remove_time_ms(60000)
+            if self.config.get_addtime_affects_event_duration():
+                self.client.change_current_event_duration(-60000)
+
+    def toggle_addtime_affects_event_duration(self):
+        value = not self.config.get_addtime_affects_event_duration()
+        self.config.set_addtime_affects_event_duration(value)
+        self.tray_manager.update_menu_states()
 
     def show_window(self):
         self.show()
@@ -337,6 +388,19 @@ class FloatTimeWindow(QMainWindow):
         if corner in ['top-left', 'bottom-right']: return Qt.CursorShape.SizeFDiagCursor
         if corner in ['top-right', 'bottom-left']: return Qt.CursorShape.SizeBDiagCursor
         return Qt.CursorShape.ArrowCursor
+
+    def _clamp_to_screen(self, pos: QPoint, size: QSize) -> QPoint:
+        """Clamp window position so the window stays within the available screen geometry."""
+        screen = QGuiApplication.screenAt(pos)
+        if screen is None:
+            screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            return pos
+        available = screen.availableGeometry()
+        w, h = size.width(), size.height()
+        x = max(available.left(), min(pos.x(), available.right() - w))
+        y = max(available.top(), min(pos.y(), available.bottom() - h))
+        return QPoint(x, y)
 
     def mousePressEvent(self, event):
         if self.is_locked or event.button() != Qt.MouseButton.LeftButton: return
@@ -369,12 +433,15 @@ class FloatTimeWindow(QMainWindow):
                 ny = self.initial_win_pos.y() + (self.initial_size.height() - nh)
             if 'bottom' in self.resize_corner:
                 nh = max(100, nh + delta.y())
-                
-            self.move(nx, ny)
+            
+            clamped = self._clamp_to_screen(QPoint(nx, ny), QSize(nw, nh))
+            self.move(clamped)
             self.resize(nw, nh)
         else:
             # Drag logic
-            self.move(self.initial_win_pos + delta)
+            new_pos = self.initial_win_pos + delta
+            clamped = self._clamp_to_screen(QPoint(new_pos.x(), new_pos.y()), self.size())
+            self.move(clamped)
 
     def mouseReleaseEvent(self, event):
         self.config.set_window_size(self.width(), self.height())
@@ -418,7 +485,9 @@ class FloatTimeWindow(QMainWindow):
         super().leaveEvent(event)
 
     def mouseDoubleClickEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton: self.quit_application()
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.timer_control_reload()
+            self.timer_control_start()
 
     def closeEvent(self, event):
         event.ignore()

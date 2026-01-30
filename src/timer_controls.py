@@ -67,11 +67,13 @@ class TopControlOverlay(QWidget):
 
 
 class BottomControlOverlay(QWidget):
-    """Bottom overlay with play, pause, restart buttons."""
+    """Bottom overlay with previous, play, pause, restart, next buttons."""
 
     start_clicked = pyqtSignal()
     pause_clicked = pyqtSignal()
     restart_clicked = pyqtSignal()
+    previous_clicked = pyqtSignal()
+    next_clicked = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -82,6 +84,13 @@ class BottomControlOverlay(QWidget):
         layout = QHBoxLayout(self)
         layout.setSpacing(8)
         layout.setContentsMargins(8, 6, 8, 6)
+
+        # Previous event
+        prev_btn = QPushButton("\u2039")  # Single left angle
+        prev_btn.setStyleSheet(_BTN_STYLE)
+        prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        prev_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        prev_btn.clicked.connect(self.previous_clicked.emit)
 
         # Play, Pause, Restart
         play_btn = QPushButton("\u25B6")  # Play triangle
@@ -102,9 +111,18 @@ class BottomControlOverlay(QWidget):
         restart_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         restart_btn.clicked.connect(self.restart_clicked.emit)
 
+        # Next event
+        next_btn = QPushButton("\u203A")  # Single right angle
+        next_btn.setStyleSheet(_BTN_STYLE)
+        next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        next_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        next_btn.clicked.connect(self.next_clicked.emit)
+
+        layout.addWidget(prev_btn)
         layout.addWidget(play_btn)
         layout.addWidget(pause_btn)
         layout.addWidget(restart_btn)
+        layout.addWidget(next_btn)
 
         self.setStyleSheet(_OVERLAY_STYLE)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)

@@ -76,6 +76,13 @@ class TrayIconManager(QObject):
         self.display_mode_action.setChecked(False)
         self.display_mode_action.triggered.connect(self.window.toggle_display_mode)
         menu.addAction(self.display_mode_action)
+
+        # +/- 1 also change event length
+        self.addtime_affects_duration_action = QAction("+/- 1 also change event length", self.window)
+        self.addtime_affects_duration_action.setCheckable(True)
+        self.addtime_affects_duration_action.setChecked(self.window.config.get_addtime_affects_event_duration())
+        self.addtime_affects_duration_action.triggered.connect(self.window.toggle_addtime_affects_event_duration)
+        menu.addAction(self.addtime_affects_duration_action)
         
         menu.addSeparator()
 
@@ -90,6 +97,12 @@ class TrayIconManager(QObject):
         reload_action = QAction("Restart", self.window)
         reload_action.triggered.connect(self.window.timer_control_reload)
         timer_menu.addAction(reload_action)
+        prev_event_action = QAction("Previous event", self.window)
+        prev_event_action.triggered.connect(self.window.timer_control_previous_event)
+        timer_menu.addAction(prev_event_action)
+        next_event_action = QAction("Next event", self.window)
+        next_event_action.triggered.connect(self.window.timer_control_next_event)
+        timer_menu.addAction(next_event_action)
         timer_menu.addSeparator()
         add_min_action = QAction("+1 min", self.window)
         add_min_action.triggered.connect(self.window.timer_control_add_minute)
@@ -97,6 +110,17 @@ class TrayIconManager(QObject):
         remove_min_action = QAction("\u2212 1 min", self.window)
         remove_min_action.triggered.connect(self.window.timer_control_remove_minute)
         timer_menu.addAction(remove_min_action)
+        timer_menu.addSeparator()
+        self.blink_action = QAction("Blink", self.window)
+        self.blink_action.setCheckable(True)
+        self.blink_action.setChecked(False)
+        self.blink_action.triggered.connect(self.window.timer_control_blink)
+        timer_menu.addAction(self.blink_action)
+        self.blackout_action = QAction("Blackout", self.window)
+        self.blackout_action.setCheckable(True)
+        self.blackout_action.setChecked(False)
+        self.blackout_action.triggered.connect(self.window.timer_control_blackout)
+        timer_menu.addAction(self.blackout_action)
         menu.addMenu(timer_menu)
 
         menu.addSeparator()
@@ -153,4 +177,9 @@ class TrayIconManager(QObject):
         self.always_on_top_action.setChecked(
             bool(self.window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
         )
+        self.addtime_affects_duration_action.setChecked(
+            self.window.config.get_addtime_affects_event_duration()
+        )
+        self.blink_action.setChecked(self.window._blink_on)
+        self.blackout_action.setChecked(self.window._blackout_on)
 
