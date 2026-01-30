@@ -61,7 +61,7 @@ You can edit this file manually or use the app’s context menu.
 - **Shortcuts**:
   - `Ctrl+Q` / `Ctrl+W` – Quit
   - `Escape` – Hide window
-  - **Double-click** – Quit
+  - **Double-click** – Hide window
 
 ## Requirements
 

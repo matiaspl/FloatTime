@@ -66,7 +66,7 @@ Możesz edytować ten plik ręcznie lub użyć menu kontekstowego aplikacji.
   - `Ctrl+Q` - Zamknij aplikację
   - `Ctrl+W` - Zamknij aplikację
   - `Escape` - Ukryj okno
-  - **Podwójne kliknięcie** - Zamknij aplikację
+  - **Podwójne kliknięcie** - Ukryj okno
 
 ## Wymagania
 

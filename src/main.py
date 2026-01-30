@@ -418,7 +418,7 @@ class FloatTimeWindow(QMainWindow):
         super().leaveEvent(event)
 
     def mouseDoubleClickEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton: self.quit_application()
+        if event.button() == Qt.MouseButton.LeftButton: self.hide()
 
     def closeEvent(self, event):
         event.ignore()

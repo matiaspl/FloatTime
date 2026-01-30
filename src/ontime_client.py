@@ -50,6 +50,10 @@ class OntimeClient:
         self.stop_event = Event()
         self.last_timer_data: Optional[TimerData] = None
         self.last_known_timer_type: Optional[str] = None
+        # Cache thresholds so they persist across runtime updates that don't include event details
+        self.cached_time_warning: Optional[float] = None
+        self.cached_time_danger: Optional[float] = None
+        self.cached_duration: Optional[float] = None
         self.use_websocket = use_websocket and (SOCKETIO_AVAILABLE or WEBSOCKET_AVAILABLE)
         self.websocket_connected = False
         self._ws_send_lock = Lock()
@@ -113,6 +117,25 @@ class OntimeClient:
         elif next_event:
             next_title = str(next_event)
 
+        # Extract thresholds, update cache if present, or use cached values
+        time_warning = current_event.get('timeWarning') or timer_dict.get('timeWarning')
+        if time_warning is not None:
+            self.cached_time_warning = time_warning
+        elif self.cached_time_warning is not None:
+            time_warning = self.cached_time_warning
+
+        time_danger = current_event.get('timeDanger') or timer_dict.get('timeDanger')
+        if time_danger is not None:
+            self.cached_time_danger = time_danger
+        elif self.cached_time_danger is not None:
+            time_danger = self.cached_time_danger
+
+        duration = current_event.get('duration') or timer_dict.get('duration')
+        if duration is not None:
+            self.cached_duration = duration
+        elif self.cached_duration is not None:
+            duration = self.cached_duration
+
         data = TimerData(
             timer_ms=timer_ms,
             timer_type=timer_type,
@@ -120,9 +143,9 @@ class OntimeClient:
             next_event_title=next_title,
             status=timer_dict.get('state', raw_data.get('status', "")),
             running=timer_dict.get('running', raw_data.get('running', False)),
-            time_warning=current_event.get('timeWarning') or timer_dict.get('timeWarning'),
-            time_danger=current_event.get('timeDanger') or timer_dict.get('timeDanger'),
-            duration=current_event.get('duration') or timer_dict.get('duration'),
+            time_warning=time_warning,
+            time_danger=time_danger,
+            duration=duration,
             timer_dict=timer_dict,
             raw_data=raw_data
         )
