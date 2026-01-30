@@ -19,7 +19,7 @@ from logger import get_logger, DEBUG_LOGGING
 # Application modules
 from config import Config
 from timer_widget import TimerWidget
-from timer_controls import TimerControlOverlay
+from timer_controls import TopControlOverlay, BottomControlOverlay
 from tray_manager import TrayIconManager
 
 logger = get_logger(__name__)
@@ -98,6 +98,12 @@ class FloatTimeWindow(QMainWindow):
         self.is_locked = self.config.get_locked()
         self._updating_fonts = False
         
+        # Debounce timer for resize events (smoother resizing)
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.timeout.connect(self._apply_font_resize)
+        self._pending_resize = None
+        
         self.setup_ui()
         self.tray_manager = TrayIconManager(self)
         
@@ -127,15 +133,18 @@ class FloatTimeWindow(QMainWindow):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
 
-        # On-hover timer control overlay (positioned at bottom)
-        self.controls_overlay = TimerControlOverlay(self)
-        self.controls_overlay.hide()
+        # On-hover timer control overlays (top and bottom)
+        self.top_overlay = TopControlOverlay(self)
+        self.top_overlay.hide()
+        self.bottom_overlay = BottomControlOverlay(self)
+        self.bottom_overlay.hide()
+        
         self._overlay_hide_timer = QTimer(self)
         self._overlay_hide_timer.setSingleShot(True)
-        self._overlay_hide_timer.timeout.connect(self._hide_controls_overlay)
-        self._connect_controls_overlay()
+        self._overlay_hide_timer.timeout.connect(self._hide_controls_overlays)
+        self._connect_control_overlays()
 
-    def _connect_controls_overlay(self):
+    def _connect_control_overlays(self):
         """Connect overlay buttons to Ontime client control API."""
         def do_start():
             if self.client:
@@ -152,21 +161,34 @@ class FloatTimeWindow(QMainWindow):
         def do_remove_minute():
             if self.client:
                 self.client.remove_time_ms(60000)
-        self.controls_overlay.start_clicked.connect(do_start)
-        self.controls_overlay.pause_clicked.connect(do_pause)
-        self.controls_overlay.restart_clicked.connect(do_reload)
-        self.controls_overlay.add_minute_clicked.connect(do_add_minute)
-        self.controls_overlay.remove_minute_clicked.connect(do_remove_minute)
+        
+        # Connect bottom overlay
+        self.bottom_overlay.start_clicked.connect(do_start)
+        self.bottom_overlay.pause_clicked.connect(do_pause)
+        self.bottom_overlay.restart_clicked.connect(do_reload)
+        
+        # Connect top overlay
+        self.top_overlay.add_minute_clicked.connect(do_add_minute)
+        self.top_overlay.remove_minute_clicked.connect(do_remove_minute)
 
-    def _hide_controls_overlay(self):
-        self.controls_overlay.hide()
+    def _hide_controls_overlays(self):
+        """Hide both control overlays."""
+        self.top_overlay.hide()
+        self.bottom_overlay.hide()
 
-    def _position_controls_overlay(self):
-        """Position overlay at bottom of window."""
+    def _position_control_overlays(self):
+        """Position overlays: +1/-1 at top, play/pause/restart at bottom, both centered."""
         w, h = self.width(), self.height()
-        ow = self.controls_overlay.sizeHint().width()
-        oh = self.controls_overlay.sizeHint().height()
-        self.controls_overlay.setGeometry((w - ow) // 2, h - oh - 4, ow, oh)
+        
+        # Top overlay (+1, -1) - centered at top edge
+        top_w = self.top_overlay.sizeHint().width()
+        top_h = self.top_overlay.sizeHint().height()
+        self.top_overlay.setGeometry((w - top_w) // 2, 4, top_w, top_h)
+        
+        # Bottom overlay (play, pause, restart) - centered at bottom edge
+        bottom_w = self.bottom_overlay.sizeHint().width()
+        bottom_h = self.bottom_overlay.sizeHint().height()
+        self.bottom_overlay.setGeometry((w - bottom_w) // 2, h - bottom_h - 4, bottom_w, bottom_h)
 
     def setup_shortcuts(self):
         for key, func in [("Ctrl+Q", self.quit_application), ("Ctrl+W", self.quit_application), ("Escape", self.hide)]:
@@ -208,7 +230,7 @@ class FloatTimeWindow(QMainWindow):
                         ("Pause", self.timer_control_pause),
                         ("Restart", self.timer_control_reload),
                         ("+1 min", self.timer_control_add_minute),
-                        ("\u2212 1 min", self.timer_control_remove_minute),
+                        ("-1 min", self.timer_control_remove_minute),
                     ]:
                         a = QAction(label, self)
                         a.triggered.connect(fn)
@@ -312,8 +334,8 @@ class FloatTimeWindow(QMainWindow):
         return None
 
     def _get_cursor(self, corner):
-        if corner in ['top-left', 'bottom-right']: return Qt.CursorShape.SizeBDiagCursor
-        if corner in ['top-right', 'bottom-left']: return Qt.CursorShape.SizeFDiagCursor
+        if corner in ['top-left', 'bottom-right']: return Qt.CursorShape.SizeFDiagCursor
+        if corner in ['top-right', 'bottom-left']: return Qt.CursorShape.SizeBDiagCursor
         return Qt.CursorShape.ArrowCursor
 
     def mousePressEvent(self, event):
@@ -358,12 +380,22 @@ class FloatTimeWindow(QMainWindow):
         self.config.set_window_size(self.width(), self.height())
         self.resize_corner = None
 
-    def resizeEvent(self, event):
-        if not self._updating_fonts:
+    def _apply_font_resize(self):
+        """Apply the pending font size update."""
+        if self._pending_resize and not self._updating_fonts:
             self._updating_fonts = True
-            self.timer_widget.update_font_sizes(self.width(), self.height())
+            w, h = self._pending_resize
+            self.timer_widget.update_font_sizes(w, h)
             self._updating_fonts = False
-        self._position_controls_overlay()
+            self._pending_resize = None
+    
+    def resizeEvent(self, event):
+        # Debounce font updates for smoother resize
+        self._pending_resize = (self.width(), self.height())
+        self._resize_timer.start(10)  # 10ms debounce
+        
+        # Always reposition overlays immediately
+        self._position_control_overlays()
         super().resizeEvent(event)
 
     def showEvent(self, event):
@@ -374,9 +406,11 @@ class FloatTimeWindow(QMainWindow):
 
     def enterEvent(self, event):
         self._overlay_hide_timer.stop()
-        self._position_controls_overlay()
-        self.controls_overlay.show()
-        self.controls_overlay.raise_()
+        self._position_control_overlays()
+        self.top_overlay.show()
+        self.top_overlay.raise_()
+        self.bottom_overlay.show()
+        self.bottom_overlay.raise_()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
