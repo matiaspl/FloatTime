@@ -23,7 +23,9 @@ Plik konfiguracyjny zawiera następujące ustawienia:
 - `display_mode` - Tryb wyświetlania: `"timer"` lub `"clock"`
 - `background_visible` - Widoczność tła (true/false)
 - `window_size` - Rozmiar okna: `[szerokość, wysokość]`
+- `window_position` - Pozycja okna: `[x, y]` (przywracana przy starcie; reset do domyślnej, jeśli poza dostępnym obszarem ekranu)
 - `locked` - Stan zablokowania okna (true/false)
+- `addtime_affects_event_duration` - Gdy true, +/- 1 min zmienia tylko czas trwania bieżącego wydarzenia (bez addtime); gdy false, +/- 1 min dodaje/odejmuje czas od działającego timera (true/false)
 
 Możesz edytować ten plik ręcznie lub użyć menu kontekstowego aplikacji.
 
@@ -39,34 +41,37 @@ Możesz edytować ten plik ręcznie lub użyć menu kontekstowego aplikacji.
 ### Interakcja z oknem
 - **Przeciąganie** - Można przesuwać okno myszką
 - **Zmiana rozmiaru** - Można skalować okno z wszystkich 4 rogów
+- **Ochrona ekranu** - Okno jest ograniczane do dostępnej geometrii ekranu (nie wychodzi poza ekran; działa na wielu monitorach)
+- **Zapamiętywanie pozycji** - Ostatnia pozycja okna jest zapisywana i przywracana przy starcie; jeśli poza aktualnym obszarem ekranu, pozycja jest resetowana do domyślnej
 - **Inteligentny kursor** - Kursor automatycznie zmienia się przy najechaniu na rogi okna
 - **Automatyczne skalowanie** - Tekst timera dopasowuje się do rozmiaru okna (binarne wyszukiwanie optymalnego rozmiaru czcionki)
+- **HiDPI** - Układ i czcionki odświeżają się przy przeniesieniu okna między ekranami o różnej DPI
+- **Windows: bez przejmowania fokusu** - Kliknięcie w overlay nie przejmuje fokusu z innych aplikacji (np. PowerPoint pozostaje aktywny)
 
 ### Sterowanie timerem (nakładki po najechaniu)
-- **Górna krawędź** - Przyciski **+1** i **−1** (dodaj/odejmij minutę), wyśrodkowane
-- **Dolna krawędź** - Przyciski **▶ Start**, **⏸ Pause**, **↻ Restart**, wyśrodkowane
-- Obie grupy przycisków pojawiają się po najechaniu myszką na okno
+- **Górna krawędź** - Przyciski **−1** i **+1** (odejmij/dodaj minutę), wyśrodkowane
+- **Dolna krawędź** - **‹ Poprzednie**, **▶ Start**, **⏸ Pause**, **↻ Restart**, **› Następne** (poprzednie/następne wydarzenie, start, pauza, restart, następne)
+- Obie grupy pojawiają się po najechaniu myszką na okno
+- **Następne** i **Poprzednie** nie zawijają (wyłączone przy ostatnim/pierwszym wydarzeniu)
 
 ### Wyświetlanie
 - **Tryby wyświetlania** - Przełączanie między timerem Ontime a zegarem systemowym
 - **Obsługa typów timerów** - Automatyczne dostosowanie do typów: `count up`, `count down`, `clock`, `none`
+- **Stan bez wydarzenia** - Gdy nie ma załadowanego wydarzenia, wyświetla `--:--` (przyciemnione) zamiast ostatniej wartości timera
 - **Kolory progów** - Dynamiczna zmiana koloru tekstu:
   - **Biały** - Normalny stan
   - **Pomarańczowy** (`#FFA528`) - Próg ostrzegawczy (warning)
   - **Czerwony** (`#FA5656`) - Próg niebezpieczeństwa (danger/overtime)
 - **Przezroczyste tło** - Opcja wyłączenia tła dla całkowicie przezroczystego okna
+- **Własna czcionka** - Timer i zegar używają Iosevka Fixed Curly z katalogu `fonts/` (fallback: Arial)
+- **Wyśrodkowanie timera** - Tekst timera jest wyśrodkowany (całkowite sekundy; countdown używa ceiling, żeby nie pomijać pierwszej sekundy)
 
 ### Konfiguracja i zapis
-- **Zapis ustawień** - Aplikacja zapisuje:
-  - URL serwera Ontime
-  - Rozmiar okna
-  - Tryb wyświetlania (timer/clock)
-  - Widoczność tła
+- **Zapis ustawień** - Aplikacja zapisuje: URL serwera, rozmiar okna, pozycję okna, tryb wyświetlania, widoczność tła, stan blokady, opcję „+/- 1 zmienia też długość wydarzenia”
 - **Skróty klawiszowe**:
-  - `Ctrl+Q` - Zamknij aplikację
-  - `Ctrl+W` - Zamknij aplikację
+  - `Ctrl+Q` / `Ctrl+W` - Zamknij aplikację
   - `Escape` - Ukryj okno
-  - **Podwójne kliknięcie** - Ukryj okno
+  - **Podwójne kliknięcie** - Przeładuj bieżące wydarzenie i start
 
 ## Wymagania
 
@@ -112,7 +117,8 @@ Możesz zmienić konfigurację przez:
 - **Lock in Place** - Zablokuj pozycję (wyłącz przeciąganie i zmianę rozmiaru)
 - **Show Clock / Show Timer** - Przełącz między timerem a zegarem systemowym
 - **Reset Size** - Przywróć domyślny rozmiar okna
-- **Timer** (podmenu) - Start, Pause, Restart, +1 min, −1 min
+- **+/- 1 also change event length** - Gdy zaznaczone, +/- 1 min zmienia tylko czas trwania bieżącego wydarzenia (bez addtime)
+- **Timer** (podmenu) - Poprzednie wydarzenie, Następne wydarzenie, Start, Pause, Restart, +1 min, −1 min, Blink, Blackout
 - **Quit** - Zamknij aplikację
 
 ## Kompilacja do pliku wykonywalnego
@@ -134,7 +140,7 @@ Wynik w katalogu `dist/floattime/` (tryb `--onedir`). Na macOS: `dist/floattime/
 3. **Timer automatycznie się aktualizuje** - Dane są pobierane przez WebSocket w czasie rzeczywistym
 4. **Przesuwaj okno** - Kliknij i przeciągnij okno (gdy nie zablokowane), aby je przesunąć
 5. **Zmień rozmiar** - Najedź na róg okna (kursor się zmieni) i przeciągnij, aby zmienić rozmiar
-6. **Sterowanie timerem** - Najedź na okno; u góry pojawią się +1/−1, na dole Start/Pause/Restart
+6. **Sterowanie timerem** - Najedź na okno; u góry pojawią się −1/+1, na dole Poprzednie/Start/Pause/Restart/Następne
 
 ### Zmiana rozmiaru okna
 
@@ -170,12 +176,13 @@ FloatTime/
 │   ├── main.py              # Główna aplikacja
 │   ├── ontime_client.py     # Klient API Ontime (WebSocket)
 │   ├── timer_widget.py      # Widget wyświetlający timer
-│   ├── timer_controls.py    # Nakładki sterowania (góra: +1/−1, dół: play/pause/restart)
+│   ├── timer_controls.py    # Nakładki sterowania (góra: −1/+1, dół: prev/play/pause/restart/next)
 │   ├── tray_manager.py      # Ikona i menu w zasobniku systemowym
 │   ├── config.py            # Zarządzanie konfiguracją
 │   ├── logger.py            # Logowanie (FLOATTIME_DEBUG)
 │   └── ui/
-│       └── config_dialog.py  # Dialog konfiguracji
+│       └── config_dialog.py # Dialog konfiguracji
+├── fonts/                   # Własna czcionka (Iosevka Fixed Curly)
 ├── hooks/                   # Hooks PyInstaller (np. PyQt6)
 ├── requirements.txt         # Zależności
 ├── build.py                 # Skrypt kompilacji (venv + PyInstaller)
@@ -192,21 +199,27 @@ Aplikacja łączy się z serwerem Ontime WebSocketów.
 
 - **Endpoint:** `ws://<adres-serwera>/ws` (z skonfigurowanego `server_url`: zamiana `http` na `ws` + `/ws`).
 - **Po połączeniu:** klient wysyła `{"tag": "poll"}` w celu pobrania danych startowych/runtime.
-- **Wiadomości przychodzące:** JSON z opcjonalnymi polami `tag` i `payload`; aplikacja traktuje `payload` (lub całą wiadomość) jako dane Ontime.
+- **Wiadomości przychodzące:** JSON z polami `tag` lub `type` i `payload`; aplikacja traktuje `payload` (lub całą wiadomość) jako dane Ontime. Aktualizacje granularne (`type`: `ontime-eventNow`, `ontime-timer` itd.) są rozpakowywane.
 - **Sterowanie (wysyłane):**
-  - `{"tag": "start"}` – start timera
+  - `{"tag": "start"}` – start załadowanego wydarzenia
   - `{"tag": "pause"}` – pauza
   - `{"tag": "reload"}` – przeładowanie/restart bieżącego wydarzenia
-  - `{"tag": "addtime", "payload": {"add": ms}}` – dodanie czasu (np. 60000 = +1 min)
-  - `{"tag": "addtime", "payload": {"remove": ms}}` – odjęcie czasu (np. 60000 = −1 min)
+  - `{"tag": "load", "payload": "next"}` – załaduj następne wydarzenie (bez zawijania przy ostatnim)
+  - `{"tag": "load", "payload": "previous"}` – załaduj poprzednie wydarzenie
+  - `{"tag": "addtime", "payload": {"add": ms}}` – dodaj czas (np. 60000 = +1 min)
+  - `{"tag": "addtime", "payload": {"remove": ms}}` – odejmij czas (np. 60000 = −1 min)
+  - `{"tag": "change", "payload": {"<event-id>": {"duration": ms}}}` – zmiana czasu trwania bieżącego wydarzenia (gdy włączone „+/- 1 zmienia też długość wydarzenia”)
+  - `{"tag": "message", "payload": {"timer": {"blink": true/false}}}` – blink
+  - `{"tag": "message", "payload": {"timer": {"blackout": true/false}}}` – blackout
 
 ### Format danych (parsowanie odpowiedzi serwera)
 
 Aplikacja parsuje JSON w stylu Ontime:
 
-- **Na górnym poziomie lub zagnieżdżone:** `timer` (obiekt lub wartość), `timerType`, `currentEvent` / `eventNow`, `nextEvent` / `loaded` / `next`, `status`, `running`.
-- **Obiekt timera:** `current`, `remaining`, `elapsed`, `state`, `running`, `timerType`, `timeWarning`, `timeDanger`, `duration`.
-- **Wydarzenie:** `title`, `timerType`, `timeWarning`, `timeDanger`, `duration`.
+- **Na górnym poziomie lub zagnieżdżone:** `timer` (obiekt lub wartość), `timerType`, `eventNow` / `currentEvent`, `eventNext` / `nextEvent`, `rundown`, `status`, `running`.
+- **Rundown:** `selectedEventIndex`, `numEvents` – używane do włączania/wyłączania następnego i poprzedniego (bez zawijania).
+- **Obiekt timera:** `current`, `remaining`, `elapsed`, `playback`, `state`, `running`, `timerType`, `timeWarning`, `timeDanger`, `duration`.
+- **Wydarzenie:** `id`, `title`, `timerType`, `timeWarning`, `timeDanger`, `duration`, `timeStart`.
 
 ## Debugowanie
 

@@ -1,7 +1,10 @@
 """Widget for displaying Ontime timer."""
+import math
+import sys
+from pathlib import Path
 from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QSizePolicy
 from PyQt6.QtCore import Qt, QTimer, QPointF
-from PyQt6.QtGui import QFont, QMouseEvent, QFontMetrics
+from PyQt6.QtGui import QFont, QMouseEvent, QFontMetrics, QFontDatabase
 from typing import Optional
 from datetime import datetime
 from logger import get_logger
@@ -27,9 +30,28 @@ class TimerWidget(QWidget):
         self.base_timer_font_size = 48
         self.base_clock_font_size = 36
         
+        self._blink_timer = QTimer(self)
+        self._blink_timer.timeout.connect(self._blink_tick)
+        self._blink_visible = True
+        self._display_font_family = self._load_display_font()
         self.setup_ui()
         self.setup_clock_timer()
     
+    def _load_display_font(self) -> str:
+        """Load Iosevka font from fonts/ and return family name; fallback to Arial."""
+        if getattr(sys, 'frozen', False):
+            base = Path(sys.executable).parent
+        else:
+            base = Path(__file__).resolve().parent.parent
+        font_path = base / 'fonts' / 'IosevkaFixedCurly-Medium.ttf'
+        if font_path.exists():
+            fid = QFontDatabase.addApplicationFont(str(font_path))
+            if fid != -1:
+                families = QFontDatabase.applicationFontFamilies(fid)
+                if families:
+                    return families[0]
+        return "Arial"
+
     def setup_ui(self):
         """Setup the UI components."""
         layout = QVBoxLayout()
@@ -138,7 +160,9 @@ class TimerWidget(QWidget):
         old_text = self.timer_label.text()
         
         if data.timer_type == 'none':
-            self.timer_label.setVisible(False)
+            self.timer_label.setVisible(True)
+            self.timer_label.setText("--:--")
+            self.timer_label.setStyleSheet("color: #888888;")  # Dimmed when idle
         elif data.timer_type == 'clock':
             self.timer_label.setVisible(True)
             self.timer_label.setStyleSheet("color: #ffffff;")
@@ -146,7 +170,7 @@ class TimerWidget(QWidget):
         else:
             self.timer_label.setVisible(True)
             if data.timer_ms is not None:
-                formatted = self._format_time(data.timer_ms)
+                formatted = self._format_time(data.timer_ms, data.timer_type)
                 self.timer_label.setText(formatted)
                 
                 # Color thresholds
@@ -166,14 +190,53 @@ class TimerWidget(QWidget):
         if len(new_text) != len(old_text):
             self.update_font_sizes()
 
-    def _format_time(self, ms: float) -> str:
-        """Format milliseconds to MM:SS or HH:MM:SS."""
-        is_neg = ms < 0
-        total_sec = int(abs(ms) / 1000)
+        self._apply_blink_blackout(data.blink, data.blackout)
+
+    def _format_time(self, ms: float, timer_type: Optional[str] = None) -> str:
+        """Format milliseconds to integral seconds only (MM:SS or HH:MM:SS). No negative zero.
+        Countdown uses ceil (works for both positive remaining and negative overtime)."""
+        if timer_type == 'count down':
+            total_sec = abs(math.ceil(ms / 1000))
+        else:
+            total_sec = int(abs(ms) / 1000)
         h, m, s = total_sec // 3600, (total_sec % 3600) // 60, total_sec % 60
-        
         time_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
-        return f"-{time_str}" if is_neg else time_str
+        # Minus only when strictly negative and at least 1 full second (no -0:00)
+        if ms < 0 and total_sec > 0:
+            return f"-{time_str}"
+        return time_str
+
+    def _apply_blink_blackout(self, blink: bool, blackout: bool):
+        """Apply blink and blackout state from Ontime message control (both toggle visibility)."""
+        if blackout:
+            self._blink_timer.stop()
+            self.timer_label.setVisible(False)
+            return
+        if not blink:
+            self._blink_timer.stop()
+            self._blink_visible = True
+            self.timer_label.setVisible(True)
+            if self.timer_data:
+                color = "#ffffff"
+                if self.timer_data.timer_type == 'count down' and self.timer_data.timer_ms is not None:
+                    color = self._get_timer_color_countdown(
+                        self.timer_data.timer_ms,
+                        self.timer_data.time_warning,
+                        self.timer_data.time_danger,
+                    )
+                elif self.timer_data.timer_type == 'count up' and self.timer_data.timer_ms is not None:
+                    color = self._get_timer_color_countup(self.timer_data.timer_ms, self.timer_data.duration)
+                self.timer_label.setStyleSheet(f"color: {color};")
+            return
+        # Blink: toggle opacity
+        if not self._blink_timer.isActive():
+            self._blink_visible = True
+            self._blink_timer.start(500)
+
+    def _blink_tick(self):
+        """Toggle timer label visibility for blink effect."""
+        self._blink_visible = not self._blink_visible
+        self.timer_label.setVisible(self._blink_visible)
 
     def _get_timer_color_countdown(self, ms: float, warning: Optional[float], danger: Optional[float]) -> str:
         if ms < 0: return "#FA5656" # Red
@@ -210,7 +273,7 @@ class TimerWidget(QWidget):
             best_size = min_size
             for _ in range(20):  # More iterations for better precision
                 mid_size = (min_size + max_size) // 2
-                font = QFont("Arial", mid_size, QFont.Weight.Bold if bold else QFont.Weight.Normal)
+                font = QFont(self._display_font_family, mid_size, QFont.Weight.Bold if bold else QFont.Weight.Normal)
                 metrics = QFontMetrics(font)
                 
                 text_width = metrics.horizontalAdvance(text)
@@ -226,7 +289,7 @@ class TimerWidget(QWidget):
                     max_size = mid_size - 1  # Too big, go smaller
             
             # Set the font with the best size found
-            font = QFont("Arial", best_size, QFont.Weight.Bold if bold else QFont.Weight.Normal)
+            font = QFont(self._display_font_family, best_size, QFont.Weight.Bold if bold else QFont.Weight.Normal)
             label.setFont(font)
             
         calculate_optimal_font_size(self.timer_label, bold=True)

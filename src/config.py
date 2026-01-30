@@ -89,6 +89,17 @@ class Config:
     def set_window_size(self, width: int, height: int) -> bool:
         """Save window size."""
         return self.set('window_size', [int(width), int(height)])
+
+    def get_window_position(self) -> Optional[tuple]:
+        """Get saved window position (x, y)."""
+        pos = self.get('window_position')
+        if pos and isinstance(pos, list) and len(pos) == 2:
+            return (int(pos[0]), int(pos[1]))
+        return None
+
+    def set_window_position(self, x: int, y: int) -> bool:
+        """Save window position."""
+        return self.set('window_position', [int(x), int(y)])
     
     def get_locked(self) -> bool:
         """Get locked state (prevents moving and resizing)."""
@@ -97,3 +108,11 @@ class Config:
     def set_locked(self, locked: bool) -> bool:
         """Save locked state."""
         return self.set('locked', bool(locked))
+
+    def get_addtime_affects_event_duration(self) -> bool:
+        """Get whether +/- 1 min also changes current event's duration."""
+        return self.get('addtime_affects_event_duration', False)
+
+    def set_addtime_affects_event_duration(self, value: bool) -> bool:
+        """Save whether +/- 1 min also changes current event's duration."""
+        return self.set('addtime_affects_event_duration', bool(value))

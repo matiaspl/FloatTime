@@ -3,7 +3,7 @@ import requests
 import json
 from typing import Optional, Dict, Any, Callable
 from threading import Thread, Event, Lock
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -29,11 +29,15 @@ class TimerData:
     timer_type: str = 'count down'
     title: str = ""
     next_event_title: str = ""
+    has_next_event: bool = False  # True when there is a different next event (no wrap)
+    has_previous_event: bool = False  # True when there is a previous event (no wrap)
     status: str = ""
     running: bool = False
     time_warning: Optional[float] = None
     time_danger: Optional[float] = None
     duration: Optional[float] = None
+    blink: bool = False
+    blackout: bool = False
     timer_dict: Dict[str, Any] = field(default_factory=dict)
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
@@ -50,10 +54,16 @@ class OntimeClient:
         self.stop_event = Event()
         self.last_timer_data: Optional[TimerData] = None
         self.last_known_timer_type: Optional[str] = None
+        self.last_current_event_id: Optional[str] = None
+        self.last_current_event_duration: Optional[float] = None
+        self.last_blink: bool = False
+        self.last_blackout: bool = False
         # Cache thresholds so they persist across runtime updates that don't include event details
         self.cached_time_warning: Optional[float] = None
         self.cached_time_danger: Optional[float] = None
         self.cached_duration: Optional[float] = None
+        self.cached_has_next_event: bool = False
+        self.cached_has_previous_event: bool = False
         self.use_websocket = use_websocket and (SOCKETIO_AVAILABLE or WEBSOCKET_AVAILABLE)
         self.websocket_connected = False
         self._ws_send_lock = Lock()
@@ -63,27 +73,43 @@ class OntimeClient:
         if not isinstance(raw_data, dict):
             return None
 
-        # Extract nested structures
-        timer_dict = raw_data.get('timer', {})
+        # Extract nested structures (use `or {}` to handle explicit null values)
+        timer_dict = raw_data.get('timer')
         if not isinstance(timer_dict, dict):
-            timer_dict = {'current': timer_dict} # Handle direct value
+            timer_dict = {'current': timer_dict} if timer_dict is not None else {}
             
-        current_event = raw_data.get('currentEvent', raw_data.get('eventNow', {}))
-        next_event = raw_data.get('nextEvent', raw_data.get('loaded', raw_data.get('next', {})))
+        # current_event: from eventNow/currentEvent, or payload may be the event itself (granular update)
+        current_event = raw_data.get('eventNow') or raw_data.get('currentEvent') or {}
+        if not current_event and isinstance(raw_data.get('payload'), dict):
+            pl = raw_data['payload']
+            if pl.get('id') is not None and (pl.get('duration') is not None or pl.get('title') is not None):
+                current_event = pl
+        if not current_event and raw_data.get('id') is not None and (raw_data.get('duration') is not None or raw_data.get('title') is not None):
+            current_event = raw_data  # payload was the event object directly
+        next_event = raw_data.get('eventNext') or raw_data.get('nextEvent') or {}
+        
+        # Check if we're in idle state (no event loaded)
+        playback = timer_dict.get('playback', '')
+        no_event_loaded = not current_event or (not current_event.get('id') and not current_event.get('title'))
+        is_idle = playback == 'idle' or (no_event_loaded and playback in ('', 'stop'))
         
         # Determine timer type
-        timer_type = (
-            raw_data.get('timerType') or 
-            current_event.get('timerType') or 
-            timer_dict.get('timerType') or 
-            timer_dict.get('type') or 
-            timer_dict.get('mode') or
-            self.last_known_timer_type or
-            'count down'
-        )
+        if is_idle:
+            timer_type = 'none'
+        else:
+            timer_type = (
+                raw_data.get('timerType') or 
+                current_event.get('timerType') or 
+                timer_dict.get('timerType') or 
+                timer_dict.get('type') or 
+                timer_dict.get('mode') or
+                self.last_known_timer_type or
+                'count down'
+            )
         if isinstance(timer_type, str):
             timer_type = timer_type.lower().replace('-', ' ').replace('_', ' ').strip()
-        self.last_known_timer_type = timer_type
+        if timer_type != 'none':
+            self.last_known_timer_type = timer_type
 
         # Determine timer value (ms)
         timer_ms = None
@@ -110,12 +136,65 @@ class OntimeClient:
         if is_heartbeat and 'clock' in raw_data:
             return None
 
-        # Next event title
+        # Next/previous event detection - use rundown index as primary source (always update when available)
         next_title = ""
-        if isinstance(next_event, dict):
+        has_next_event = self.cached_has_next_event
+        has_previous_event = self.cached_has_previous_event
+        
+        # Check rundown data to detect first/last event
+        rundown = raw_data.get('rundown', {})
+        if isinstance(rundown, dict):
+            selected_idx = rundown.get('selectedEventIndex')
+            num_events = rundown.get('numEvents', 0)
+            if selected_idx is not None and num_events > 0:
+                # At first event (index 0) = no previous
+                has_previous_event = selected_idx > 0
+                self.cached_has_previous_event = has_previous_event
+                # At last event = no next
+                has_next_event = selected_idx < num_events - 1
+                self.cached_has_next_event = has_next_event
+        
+        if isinstance(next_event, dict) and next_event:
             next_title = next_event.get('title', "")
+            # Fallback wrap detection: compare timeStart (next before current = wrap)
+            if has_next_event:  # Only check if rundown didn't already set to False
+                next_start = next_event.get('timeStart')
+                current_start = current_event.get('timeStart') if isinstance(current_event, dict) else None
+                if next_start is not None and current_start is not None and next_start < current_start:
+                    has_next_event = False
+                    self.cached_has_next_event = False
         elif next_event:
             next_title = str(next_event)
+
+        # Store current event id and duration for change_current_event_duration
+        if isinstance(current_event, dict) and current_event:
+            eid = current_event.get('id')
+            if eid is not None:
+                self.last_current_event_id = str(eid)
+            dur = current_event.get('duration') or timer_dict.get('duration')
+            if dur is not None:
+                self.last_current_event_duration = float(dur)
+
+        # Message/timer display state (blink, blackout) - from message.timer or top-level timer message
+        msg_block = raw_data.get('message') if isinstance(raw_data.get('message'), dict) else None
+        timer_msg = (msg_block.get('timer') or raw_data.get('timer')) if isinstance(msg_block, dict) else raw_data.get('timer')
+        if isinstance(timer_msg, dict):
+            if 'blink' in timer_msg:
+                self.last_blink = bool(timer_msg['blink'])
+            if 'blackout' in timer_msg:
+                self.last_blackout = bool(timer_msg['blackout'])
+        # Also handle payload that is message state only (tag "message" response)
+        if isinstance(raw_data, dict) and 'timer' in raw_data and isinstance(raw_data.get('timer'), dict):
+            t = raw_data['timer']
+            if 'blink' in t:
+                self.last_blink = bool(t['blink'])
+            if 'blackout' in t:
+                self.last_blackout = bool(t['blackout'])
+
+        # Message-only payload: merge blink/blackout into last_timer_data so we don't reset the display
+        if not has_timer_data and self.last_timer_data is not None:
+            if not raw_data.get('currentEvent') and not raw_data.get('eventNow'):
+                return replace(self.last_timer_data, blink=self.last_blink, blackout=self.last_blackout)
 
         # Extract thresholds, update cache if present, or use cached values
         time_warning = current_event.get('timeWarning') or timer_dict.get('timeWarning')
@@ -141,11 +220,15 @@ class OntimeClient:
             timer_type=timer_type,
             title=current_event.get('title', raw_data.get('title', "")),
             next_event_title=next_title,
+            has_next_event=has_next_event,
+            has_previous_event=has_previous_event,
             status=timer_dict.get('state', raw_data.get('status', "")),
             running=timer_dict.get('running', raw_data.get('running', False)),
             time_warning=time_warning,
             time_danger=time_danger,
             duration=duration,
+            blink=self.last_blink,
+            blackout=self.last_blackout,
             timer_dict=timer_dict,
             raw_data=raw_data
         )
@@ -190,8 +273,15 @@ class OntimeClient:
     def _ws_on_message(self, ws, message):
         try:
             raw = json.loads(message)
-            # Handle Ontime tagged format
-            payload = raw.get('payload', raw) if isinstance(raw, dict) and 'tag' in raw else raw
+            if not isinstance(raw, dict):
+                return
+            # Handle Ontime format: { "tag": "poll", "payload": {...} } or { "type": "ontime-eventNow", "payload": {...} }
+            if 'tag' in raw:
+                payload = raw.get('payload', raw)
+            elif 'type' in raw and raw.get('type', '').startswith('ontime-'):
+                payload = raw.get('payload', raw)
+            else:
+                payload = raw
             data = self._parse_data(payload)
             if data: self._notify(data)
         except Exception as e:
@@ -266,6 +356,14 @@ class OntimeClient:
         """Reload/restart the current event."""
         return self._send_ws({"tag": "reload"})
 
+    def load_next_event(self) -> bool:
+        """Load the next event (without starting)."""
+        return self._send_ws({"tag": "load", "payload": "next"})
+
+    def load_previous_event(self) -> bool:
+        """Load the previous event (without starting)."""
+        return self._send_ws({"tag": "load", "payload": "previous"})
+
     def add_time_ms(self, ms: int) -> bool:
         """Add time to the running timer (e.g. 60000 for +1 minute)."""
         return self._send_ws({"tag": "addtime", "payload": {"add": ms}})
@@ -273,3 +371,24 @@ class OntimeClient:
     def remove_time_ms(self, ms: int) -> bool:
         """Remove time from the running timer (e.g. 60000 for -1 minute)."""
         return self._send_ws({"tag": "addtime", "payload": {"remove": ms}})
+
+    def change_current_event_duration(self, delta_ms: int) -> bool:
+        """Change the current event's duration by delta_ms. Returns True if sent."""
+        if self.last_current_event_id is None or self.last_current_event_duration is None:
+            return False
+        new_duration = int(self.last_current_event_duration) + delta_ms
+        if new_duration < 0:
+            new_duration = 0
+        msg = {"tag": "change", "payload": {self.last_current_event_id: {"duration": new_duration}}}
+        if not self._send_ws(msg):
+            return False
+        self.last_current_event_duration = new_duration
+        return True
+
+    def set_timer_blackout(self, blackout: bool) -> bool:
+        """Set timer screen blackout on or off."""
+        return self._send_ws({"tag": "message", "payload": {"timer": {"blackout": blackout}}})
+
+    def set_timer_blink(self, blink: bool) -> bool:
+        """Set timer blink on or off."""
+        return self._send_ws({"tag": "message", "payload": {"timer": {"blink": blink}}})
