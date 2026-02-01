@@ -1,12 +1,28 @@
 """Client for communicating with Ontime API."""
 import requests
 import json
+import socket
+import uuid
 from typing import Optional, Dict, Any, Callable
 from threading import Thread, Event, Lock
 from dataclasses import dataclass, field, replace
 from logger import get_logger
 
 logger = get_logger(__name__)
+
+# Client identity for Ontime server (clientSet message + optional HTTP headers)
+try:
+    from __init__ import __version__
+except ImportError:
+    __version__ = "1.0.0"
+
+# Generate a unique client name: "FloatTime@hostname-shortid"
+_hostname = socket.gethostname().split('.')[0]  # Short hostname (no domain)
+_short_id = uuid.uuid4().hex[:4]
+CLIENT_NAME = f"{_hostname} {_short_id}"
+# Ontime WebSocket: identify client so server can list us (same as apps/client socket.ts MessageTag.ClientSet)
+# Tag value is kebab-case (common in TypeScript string enums)
+WS_TAG_CLIENT_SET = "client-set"
 
 # Try to import Socket.IO client
 try:
@@ -290,10 +306,20 @@ class OntimeClient:
     def _ws_loop(self):
         """Standard WebSocket loop."""
         ws_url = self.server_url.replace('http', 'ws', 1) + "/ws"
-        
+
         def on_open(ws):
             logger.info("WebSocket connected")
             self.websocket_connected = True
+            # Identify as FloatTime (same protocol as Ontime web client, see socket.ts)
+            ws.send(json.dumps({
+                "tag": WS_TAG_CLIENT_SET,
+                "payload": {
+                    "type": "floattime",
+                    #"origin": "floattime",
+                    #"path": "/",
+                    "name": CLIENT_NAME,
+                },
+            }))
             ws.send(json.dumps({"tag": "poll"}))
 
         def on_close(ws, *args):

@@ -29,6 +29,43 @@ NSNormalWindowLevel = 0
 NSFloatingWindowLevel = 3
 NSStatusWindowLevel = 25  # More aggressive "always on top"
 
+# macOS: Event monitor for preventWindowOrdering
+_macos_no_activate_monitor = None
+
+
+def _setup_macos_no_activate_monitor(nswindow):
+    """Set up local event monitor to call preventWindowOrdering on mouse down in our window."""
+    global _macos_no_activate_monitor
+    if _macos_no_activate_monitor is not None or sys.platform != "darwin":
+        return
+    try:
+        from AppKit import NSApp, NSEvent, NSLeftMouseDownMask, NSRightMouseDownMask
+        window_number = nswindow.windowNumber()
+
+        def handle_mouse_down(event):
+            if event.windowNumber() == window_number:
+                NSApp.preventWindowOrdering()
+            return event
+
+        mask = NSLeftMouseDownMask | NSRightMouseDownMask
+        _macos_no_activate_monitor = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(mask, handle_mouse_down)
+        logger.debug("[macOS] Event monitor set up (preventWindowOrdering)")
+    except Exception as e:
+        logger.warning(f"[macOS] Failed to set up event monitor: {e}")
+
+
+def _reapply_macos_activation_policy():
+    """Re-apply accessory activation policy (Qt may reset it when window is shown)."""
+    if sys.platform != "darwin":
+        return
+    try:
+        from AppKit import NSApp, NSApplicationActivationPolicyAccessory
+        NSApp.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+        logger.debug("[macOS] Activation policy re-applied (accessory)")
+    except Exception as e:
+        logger.warning(f"[macOS] Failed to re-apply activation policy: {e}")
+
+
 def _set_macos_window_level(window, floating: bool):
     """Set NSWindow level on macOS so the window actually stays on top of other apps.
     
@@ -73,6 +110,20 @@ def _set_macos_window_level(window, floating: bool):
         
         # Enable mouse tracking even when window is not active
         nswindow.setAcceptsMouseMovedEvents_(True)
+        
+        # Undocumented API: prevents window (and app) from activating on click (if available).
+        try:
+            if hasattr(nswindow, "_setPreventsActivation_"):
+                nswindow._setPreventsActivation_(True)
+                logger.debug("[macOS] _setPreventsActivation(True) applied")
+            elif hasattr(nswindow, "setPreventsActivation_"):
+                nswindow.setPreventsActivation_(True)
+                logger.debug("[macOS] setPreventsActivation(True) applied")
+        except Exception:
+            pass
+        
+        # Event monitor: prevent window ordering on mouse down
+        _setup_macos_no_activate_monitor(nswindow)
         
         logger.debug(f"[macOS] Window level set to {level}")
         
@@ -603,6 +654,8 @@ class FloatTimeWindow(QMainWindow):
         if sys.platform == "darwin":
             on_top = bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
             _set_macos_window_level(self, on_top)
+            # Re-apply accessory policy (Qt may reset it when window is shown)
+            QTimer.singleShot(0, _reapply_macos_activation_policy)
         if sys.platform == "win32":
             _set_windows_no_activate(self)
         # React to HiDPI / screen changes when window moves between monitors
@@ -672,6 +725,9 @@ def main():
     
     window = FloatTimeWindow()
     window.show()
+    # macOS: Re-apply activation policy after show (Qt may reset it shortly after)
+    if sys.platform == "darwin":
+        QTimer.singleShot(100, _reapply_macos_activation_policy)
     sys.exit(app.exec())
 
 if __name__ == "__main__":
