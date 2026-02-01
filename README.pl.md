@@ -37,6 +37,7 @@ Możesz edytować ten plik ręcznie lub użyć menu kontekstowego aplikacji.
 - **Cross-platform** - Działa na Windows, macOS i Linux
 - **Konfiguracja URL** - Wystarczy podać adres serwera Ontime
 - **System tray** - Działa w tle z ikoną w zasobniku systemowym
+- **Identyfikacja klienta** - Aplikacja wysyła unikalną nazwę (hostname + krótki losowy ID) do serwera Ontime, dzięki czemu każda instancja pojawia się na liście klientów serwera
 
 ### Interakcja z oknem
 - **Przeciąganie** - Można przesuwać okno myszką
@@ -46,7 +47,8 @@ Możesz edytować ten plik ręcznie lub użyć menu kontekstowego aplikacji.
 - **Inteligentny kursor** - Kursor automatycznie zmienia się przy najechaniu na rogi okna
 - **Automatyczne skalowanie** - Tekst timera dopasowuje się do rozmiaru okna (binarne wyszukiwanie optymalnego rozmiaru czcionki)
 - **HiDPI** - Układ i czcionki odświeżają się przy przeniesieniu okna między ekranami o różnej DPI
-- **Windows: bez przejmowania fokusu** - Kliknięcie w overlay nie przejmuje fokusu z innych aplikacji (np. PowerPoint pozostaje aktywny)
+- **Bez przejmowania fokusu** - Kliknięcie w overlay nie przejmuje fokusu z innych aplikacji (np. PowerPoint pozostaje aktywny); na macOS realizowane przez politykę aktywacji „accessory” i obsługę zdarzeń
+- **macOS: hover przy nieaktywnej aplikacji** - Nakładki sterowania (przyciski u góry i u dołu) pojawiają się po najechaniu myszką nawet gdy aplikacja nie ma fokusu (przez polling pozycji kursora)
 
 ### Sterowanie timerem (nakładki po najechaniu)
 - **Górna krawędź** - Przyciski **−1** i **+1** (odejmij/dodaj minutę), wyśrodkowane
@@ -198,7 +200,7 @@ Aplikacja łączy się z serwerem Ontime WebSocketów.
 ### WebSocket
 
 - **Endpoint:** `ws://<adres-serwera>/ws` (z skonfigurowanego `server_url`: zamiana `http` na `ws` + `/ws`).
-- **Po połączeniu:** klient wysyła `{"tag": "poll"}` w celu pobrania danych startowych/runtime.
+- **Po połączeniu:** klient wysyła wiadomość `client-set` z polami `type` i `name` (name = hostname + krótki losowy ID), żeby serwer mógł wyświetlić klienta na liście, a następnie `{"tag": "poll"}` w celu pobrania danych startowych/runtime.
 - **Wiadomości przychodzące:** JSON z polami `tag` lub `type` i `payload`; aplikacja traktuje `payload` (lub całą wiadomość) jako dane Ontime. Aktualizacje granularne (`type`: `ontime-eventNow`, `ontime-timer` itd.) są rozpakowywane.
 - **Sterowanie (wysyłane):**
   - `{"tag": "start"}` – start załadowanego wydarzenia

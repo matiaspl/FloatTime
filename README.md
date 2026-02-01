@@ -37,6 +37,7 @@ You can edit this file manually or use the app’s context menu.
 - **Cross-platform** – Windows, macOS, Linux
 - **URL configuration** – Just set the Ontime server URL
 - **System tray** – Runs in the background with a tray icon
+- **Client identification** – Sends a unique name (hostname + short random ID) to the Ontime server so each instance appears in the server’s client list
 
 ### Window interaction
 - **Dragging** – Move the window by dragging with the mouse
@@ -46,7 +47,8 @@ You can edit this file manually or use the app’s context menu.
 - **Smart cursor** – Cursor changes when hovering over corners
 - **Auto-scaling** – Timer text scales to fit the window (binary search for optimal font size)
 - **HiDPI** – Layout and fonts refresh when the window moves between screens with different DPI
-- **Windows: no focus steal** – Clicking the overlay does not steal focus from other apps (e.g. PowerPoint stays active)
+- **No focus steal** – Clicking the overlay does not steal focus from other apps (e.g. PowerPoint stays active); on macOS this uses accessory activation policy and event handling
+- **macOS: hover when inactive** – Control overlays (top/bottom buttons) appear on hover even when the app is not focused (via mouse polling)
 
 ### Timer controls (hover overlays)
 - **Top edge** – **−1** and **+1** (subtract/add minute), centered
@@ -188,7 +190,7 @@ The app connects to Ontime via WebSockets.
 ### WebSocket
 
 - **Endpoint:** `ws://<server-url>/ws` (derived from configured `server_url` by replacing `http` with `ws` and appending `/ws`).
-- **On connect:** the client sends `{"tag": "poll"}` to request initial/runtime data.
+- **On connect:** the client sends a `client-set` message with `type` and `name` (name = hostname + short random ID) so the server can list the client, then `{"tag": "poll"}` to request initial/runtime data.
 - **Incoming messages:** JSON with `tag` or `type` and `payload`; the app uses `payload` (or the whole message) as Ontime runtime data. Granular updates (`type`: `ontime-eventNow`, `ontime-timer`, etc.) are unwrapped so the payload is parsed.
 - **Control (send):**
   - `{"tag": "start"}` – start the loaded event
