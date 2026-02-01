@@ -40,16 +40,22 @@ class TimerWidget(QWidget):
     def _load_display_font(self) -> str:
         """Load Iosevka font from fonts/ and return family name; fallback to Arial."""
         if getattr(sys, 'frozen', False):
-            base = Path(sys.executable).parent
+            # PyInstaller: use _MEIPASS for bundled data location
+            base = Path(getattr(sys, '_MEIPASS', Path(sys.executable).parent))
         else:
             base = Path(__file__).resolve().parent.parent
         font_path = base / 'fonts' / 'IosevkaFixedCurly-Medium.ttf'
+        logger.debug(f"Looking for font at: {font_path}")
         if font_path.exists():
             fid = QFontDatabase.addApplicationFont(str(font_path))
             if fid != -1:
                 families = QFontDatabase.applicationFontFamilies(fid)
                 if families:
+                    logger.debug(f"Loaded font: {families[0]}")
                     return families[0]
+            logger.warning(f"Failed to load font from {font_path}")
+        else:
+            logger.warning(f"Font file not found: {font_path}")
         return "Arial"
 
     def setup_ui(self):

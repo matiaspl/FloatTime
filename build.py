@@ -115,6 +115,7 @@ def build():
         "--noupx",  # Disable UPX compression (faster startup)
         "--paths", "src",  # Add src to Python path
         f"--add-data=src{separator}src",  # Include src directory
+        f"--add-data=fonts{separator}fonts",  # Include fonts directory
         # Hidden imports
         "--hidden-import", "config",
         "--hidden-import", "ontime_client",

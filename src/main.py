@@ -29,7 +29,6 @@ NSNormalWindowLevel = 0
 NSFloatingWindowLevel = 3
 NSStatusWindowLevel = 25  # More aggressive "always on top"
 
-
 def _set_macos_window_level(window, floating: bool):
     """Set NSWindow level on macOS so the window actually stays on top of other apps.
     
@@ -38,48 +37,49 @@ def _set_macos_window_level(window, floating: bool):
     if sys.platform != "darwin":
         return
     try:
-        # Use PyObjC to get NSWindow from NSView pointer
         import objc
         from ctypes import c_void_p
         from AppKit import NSView
         
         qwindow = window.windowHandle()
-        print(f"[macOS] windowHandle = {qwindow}")
         if not qwindow:
-            print("[macOS] ERROR: windowHandle is None")
+            logger.warning("[macOS] windowHandle is None")
             return
         
         # winId() returns the NSView* pointer as an integer
         nsview_ptr = int(qwindow.winId())
-        print(f"[macOS] NSView pointer = {hex(nsview_ptr)}")
-        
-        # Convert the pointer to an NSView object using PyObjC
         nsview = objc.objc_object(c_void_p=nsview_ptr)
-        print(f"[macOS] NSView object = {nsview}")
-        
-        # Get the NSWindow from the NSView
         nswindow = nsview.window()
-        print(f"[macOS] NSWindow = {nswindow}")
         
         if not nswindow:
-            print("[macOS] ERROR: Could not get NSWindow from NSView")
+            logger.warning("[macOS] Could not get NSWindow from NSView")
             return
         
-        # Set window level using PyObjC
+        # Set window level
         level = NSStatusWindowLevel if floating else NSNormalWindowLevel
-        print(f"[macOS] Setting window level to {level} (floating={floating})")
         nswindow.setLevel_(level)
-        nswindow.setHidesOnDeactivate_(False)  # Don't hide when losing focus
-        print(f"[macOS] ✓ Window level set successfully")
+        nswindow.setHidesOnDeactivate_(False)
+        
+        # Collection behaviors for Spaces and window cycling
+        from AppKit import (
+            NSWindowCollectionBehaviorCanJoinAllSpaces,
+            NSWindowCollectionBehaviorStationary,
+            NSWindowCollectionBehaviorIgnoresCycle
+        )
+        behavior = (NSWindowCollectionBehaviorCanJoinAllSpaces |
+                    NSWindowCollectionBehaviorStationary |
+                    NSWindowCollectionBehaviorIgnoresCycle)
+        nswindow.setCollectionBehavior_(behavior)
+        
+        # Enable mouse tracking even when window is not active
+        nswindow.setAcceptsMouseMovedEvents_(True)
+        
+        logger.debug(f"[macOS] Window level set to {level}")
         
     except ImportError as e:
-        print(f"[macOS] PyObjC not available: {e}")
-        print("[macOS] Install with: pip install pyobjc-framework-Cocoa")
-        print("[macOS] Falling back to Qt's WindowStaysOnTopHint (may not work across apps)")
+        logger.warning(f"[macOS] PyObjC not available: {e}. Install with: pip install pyobjc-framework-Cocoa")
     except Exception as e:
-        print(f"[macOS] ERROR: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"[macOS] Failed to set window level: {e}")
 
 
 def _set_windows_no_activate(window):
@@ -155,8 +155,13 @@ class FloatTimeWindow(QMainWindow):
         QTimer.singleShot(100, self.load_configuration)
 
     def setup_ui(self):
-        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
+        flags = Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+        # On macOS, prevent window from stealing focus when clicked
+        if sys.platform == "darwin":
+            flags |= Qt.WindowType.WindowDoesNotAcceptFocus
+        self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover)  # Enable hover events even when not active
         self.setWindowTitle("FloatTime")
         
         self.timer_widget = TimerWidget()
@@ -184,6 +189,13 @@ class FloatTimeWindow(QMainWindow):
         self._overlay_hide_timer.setSingleShot(True)
         self._overlay_hide_timer.timeout.connect(self._hide_controls_overlays)
         self._connect_control_overlays()
+        
+        # macOS: poll mouse position since enter/leave events don't work when inactive
+        self._mouse_over_window = False
+        if sys.platform == "darwin":
+            self._hover_poll_timer = QTimer(self)
+            self._hover_poll_timer.timeout.connect(self._poll_mouse_position)
+            self._hover_poll_timer.start(100)  # Check every 100ms
 
     def _connect_control_overlays(self):
         """Connect overlay buttons to Ontime client control API."""
@@ -230,6 +242,30 @@ class FloatTimeWindow(QMainWindow):
         """Hide both control overlays."""
         self.top_overlay.hide()
         self.bottom_overlay.hide()
+
+    def _poll_mouse_position(self):
+        """macOS: poll cursor position to detect hover since enter/leave don't work when inactive."""
+        if not self.isVisible() or not self.config.get_hover_controls_enabled():
+            if self._mouse_over_window:
+                self._mouse_over_window = False
+                self._overlay_hide_timer.start(300)
+            return
+        
+        cursor_pos = QCursor.pos()
+        window_rect = self.geometry()
+        is_over = window_rect.contains(cursor_pos)
+        
+        if is_over and not self._mouse_over_window:
+            # Mouse entered
+            self._mouse_over_window = True
+            self._overlay_hide_timer.stop()
+            self._position_control_overlays()
+            self.top_overlay.show()
+            self.bottom_overlay.show()
+        elif not is_over and self._mouse_over_window:
+            # Mouse left
+            self._mouse_over_window = False
+            self._overlay_hide_timer.start(300)
 
     def _position_control_overlays(self):
         """Position overlays: +1/-1 at top, play/pause/restart at bottom, both centered."""
@@ -352,10 +388,15 @@ class FloatTimeWindow(QMainWindow):
         if not self.is_locked: self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def toggle_always_on_top(self):
-        if self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint:
-            self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)
+        new_flags = self.windowFlags()
+        if new_flags & Qt.WindowType.WindowStaysOnTopHint:
+            new_flags &= ~Qt.WindowType.WindowStaysOnTopHint
         else:
-            self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+            new_flags |= Qt.WindowType.WindowStaysOnTopHint
+        # Ensure macOS keeps WindowDoesNotAcceptFocus
+        if sys.platform == "darwin":
+            new_flags |= Qt.WindowType.WindowDoesNotAcceptFocus
+        self.setWindowFlags(new_flags)
         self.show()
         self.tray_manager.update_menu_states()
 
@@ -423,8 +464,10 @@ class FloatTimeWindow(QMainWindow):
 
     def show_window(self):
         self.show()
-        self.raise_()
-        self.activateWindow()
+        # On macOS, don't steal focus - the window will be visible due to high level
+        if sys.platform != "darwin":
+            self.raise_()
+            self.activateWindow()
 
     def quit_application(self):
         if self.client: self.client.stop()
@@ -583,17 +626,21 @@ class FloatTimeWindow(QMainWindow):
             self._updating_fonts = False
 
     def enterEvent(self, event):
-        self._overlay_hide_timer.stop()
-        if self.config.get_hover_controls_enabled():
-            self._position_control_overlays()
-            self.top_overlay.show()
-            self.top_overlay.raise_()
-            self.bottom_overlay.show()
-            self.bottom_overlay.raise_()
+        # On macOS, hover is handled by _poll_mouse_position (works when app inactive)
+        if sys.platform != "darwin":
+            self._overlay_hide_timer.stop()
+            if self.config.get_hover_controls_enabled():
+                self._position_control_overlays()
+                self.top_overlay.show()
+                self.bottom_overlay.show()
+                self.top_overlay.raise_()
+                self.bottom_overlay.raise_()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        self._overlay_hide_timer.start(300)
+        # On macOS, hover is handled by _poll_mouse_position (works when app inactive)
+        if sys.platform != "darwin":
+            self._overlay_hide_timer.start(300)
         super().leaveEvent(event)
 
     def mouseDoubleClickEvent(self, event):
@@ -613,6 +660,16 @@ def main():
         QApplication.setAttribute(attr.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    
+    # macOS: Set app as "accessory" so it doesn't steal focus when clicked
+    if sys.platform == "darwin":
+        try:
+            from AppKit import NSApp, NSApplicationActivationPolicyAccessory
+            NSApp.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+            logger.debug("[macOS] App set to accessory activation policy")
+        except Exception as e:
+            logger.warning(f"[macOS] Failed to set activation policy: {e}")
+    
     window = FloatTimeWindow()
     window.show()
     sys.exit(app.exec())
