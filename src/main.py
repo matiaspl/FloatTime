@@ -235,6 +235,7 @@ class FloatTimeWindow(QMainWindow):
         self.top_overlay.hide()
         self.bottom_overlay = BottomControlOverlay(self)
         self.bottom_overlay.hide()
+        self.bottom_overlay.set_mode('aux' if self.config.get_timer_source() != 'main' else 'main')
         
         self._overlay_hide_timer = QTimer(self)
         self._overlay_hide_timer.setSingleShot(True)
@@ -249,42 +250,72 @@ class FloatTimeWindow(QMainWindow):
             self._hover_poll_timer.start(100)  # Check every 100ms
 
     def _connect_control_overlays(self):
-        """Connect overlay buttons to Ontime client control API."""
+        """Connect overlay buttons to Ontime client control API (main or aux)."""
+        def _aux_id():
+            src = self.client.get_timer_source() if self.client else 'main'
+            return int(src[-1]) if src.startswith('aux') else None
+
         def do_start():
             if self.client:
-                self.client.start_timer()
+                if self.client.get_timer_source() == 'main':
+                    self.client.start_timer()
+                else:
+                    aid = _aux_id()
+                    if aid:
+                        self.client.start_aux_timer(aid)
         def do_pause():
             if self.client:
-                self.client.pause_timer()
+                if self.client.get_timer_source() == 'main':
+                    self.client.pause_timer()
+                else:
+                    aid = _aux_id()
+                    if aid:
+                        self.client.pause_aux_timer(aid)
         def do_reload():
-            if self.client:
+            if self.client and self.client.get_timer_source() == 'main':
                 self.client.reload_timer()
+        def do_stop_aux():
+            if self.client:
+                aid = _aux_id()
+                if aid:
+                    self.client.stop_aux_timer(aid)
         def do_add_minute():
             if self.client:
-                if self.config.get_addtime_affects_event_duration():
-                    self.client.change_current_event_duration(60000)
+                if self.client.get_timer_source() == 'main':
+                    if self.config.get_addtime_affects_event_duration():
+                        self.client.change_current_event_duration(60000)
+                    else:
+                        self.client.add_time_ms(60000)
                 else:
-                    self.client.add_time_ms(60000)
+                    aid = _aux_id()
+                    if aid:
+                        self.client.add_aux_time_ms(aid, 60000)
         def do_remove_minute():
             if self.client:
-                if self.config.get_addtime_affects_event_duration():
-                    self.client.change_current_event_duration(-60000)
+                if self.client.get_timer_source() == 'main':
+                    if self.config.get_addtime_affects_event_duration():
+                        self.client.change_current_event_duration(-60000)
+                    else:
+                        self.client.remove_time_ms(60000)
                 else:
-                    self.client.remove_time_ms(60000)
+                    aid = _aux_id()
+                    if aid:
+                        self.client.add_aux_time_ms(aid, -60000)
         def do_previous_event():
             if self.client and self.client.last_timer_data and self.client.last_timer_data.has_previous_event:
                 self.client.load_previous_event()
         def do_next_event():
             if self.client and self.client.last_timer_data and self.client.last_timer_data.has_next_event:
                 self.client.load_next_event()
-        
+
         # Connect bottom overlay
         self.bottom_overlay.start_clicked.connect(do_start)
         self.bottom_overlay.pause_clicked.connect(do_pause)
         self.bottom_overlay.restart_clicked.connect(do_reload)
+        self.bottom_overlay.stop_clicked.connect(do_stop_aux)
         self.bottom_overlay.previous_clicked.connect(do_previous_event)
         self.bottom_overlay.next_clicked.connect(do_next_event)
-        
+
         # Connect top overlay
         self.top_overlay.remove_minute_clicked.connect(do_remove_minute)
         self.top_overlay.add_minute_clicked.connect(do_add_minute)
@@ -349,8 +380,9 @@ class FloatTimeWindow(QMainWindow):
             ("Lock in Place", self.toggle_locked, True, self.is_locked),
             ("On-hover controls", self.toggle_hover_controls, True, self.config.get_hover_controls_enabled()),
             (None, None),
-            ("Show Clock" if self.timer_widget.display_mode == 'timer' else "Show Timer", self.toggle_display_mode, True, self.timer_widget.display_mode == 'clock'),
             ("+/- 1 changes event length", self.toggle_addtime_affects_event_duration, True, self.config.get_addtime_affects_event_duration()),
+            (None, None),
+            ("Timer source", None),  # Submenu added below
             (None, None),
             ("Reset Size", self.reset_window_size),
             (None, None),
@@ -360,6 +392,17 @@ class FloatTimeWindow(QMainWindow):
         for text, func, *extra in actions:
             if text is None:
                 menu.addSeparator()
+            elif text == "Timer source":
+                src_menu = QMenu("Timer source", self)
+                is_clock = self.timer_widget.display_mode == 'clock'
+                current = self.config.get_timer_source()
+                for label, value in [("Main", "main"), ("Aux 1", "aux1"), ("Aux 2", "aux2"), ("Aux 3", "aux3"), ("System clock", "clock")]:
+                    a = QAction(label, self)
+                    a.setCheckable(True)
+                    a.setChecked((value == "clock" and is_clock) or (value != "clock" and not is_clock and current == value))
+                    a.triggered.connect(lambda checked, v=value: self.set_timer_source(v))
+                    src_menu.addAction(a)
+                menu.addMenu(src_menu)
             else:
                 action = QAction(text, self)
                 if extra:
@@ -368,7 +411,7 @@ class FloatTimeWindow(QMainWindow):
                 action.triggered.connect(func)
                 if text == "Reset Size":
                     # Insert Timer submenu before Reset Size
-                    timer_menu = QMenu("Timer", self)
+                    timer_menu = QMenu("Timer controls", self)
                     for item in [
                         ("Start", self.timer_control_start),
                         ("Pause", self.timer_control_pause),
@@ -404,11 +447,21 @@ class FloatTimeWindow(QMainWindow):
         if self.client: self.client.stop()
         from ontime_client import OntimeClient
         self.client = OntimeClient(url, update_callback=self.timer_signal.timer_updated.emit)
+        self.client.set_timer_source(self.config.get_timer_source())
         self.client.start()
+        self._apply_timer_source_to_ui()
+
+    def _apply_timer_source_to_ui(self):
+        """Sync overlay mode and client source from config."""
+        src = self.config.get_timer_source()
+        if self.client:
+            self.client.set_timer_source(src)
+        self.bottom_overlay.set_mode('aux' if src != 'main' else 'main')
 
     def on_timer_update(self, data):
         self._blink_on = data.blink
         self._blackout_on = data.blackout
+        self.bottom_overlay.set_mode('aux' if data.timer_source != 'main' else 'main')
         self.tray_manager.update_menu_states()
         self.timer_widget.update_timer(data)
 
@@ -457,15 +510,30 @@ class FloatTimeWindow(QMainWindow):
 
     def timer_control_start(self):
         if self.client:
-            self.client.start_timer()
+            if self.client.get_timer_source() == 'main':
+                self.client.start_timer()
+            else:
+                src = self.client.get_timer_source()
+                if src.startswith('aux'):
+                    self.client.start_aux_timer(int(src[-1]))
 
     def timer_control_pause(self):
         if self.client:
-            self.client.pause_timer()
+            if self.client.get_timer_source() == 'main':
+                self.client.pause_timer()
+            else:
+                src = self.client.get_timer_source()
+                if src.startswith('aux'):
+                    self.client.pause_aux_timer(int(src[-1]))
 
     def timer_control_reload(self):
         if self.client:
-            self.client.reload_timer()
+            if self.client.get_timer_source() == 'main':
+                self.client.reload_timer()
+            else:
+                src = self.client.get_timer_source()
+                if src.startswith('aux'):
+                    self.client.stop_aux_timer(int(src[-1]))
 
     def timer_control_previous_event(self):
         if self.client and self.client.last_timer_data and self.client.last_timer_data.has_previous_event:
@@ -489,17 +557,27 @@ class FloatTimeWindow(QMainWindow):
 
     def timer_control_add_minute(self):
         if self.client:
-            if self.config.get_addtime_affects_event_duration():
-                self.client.change_current_event_duration(60000)
+            if self.client.get_timer_source() == 'main':
+                if self.config.get_addtime_affects_event_duration():
+                    self.client.change_current_event_duration(60000)
+                else:
+                    self.client.add_time_ms(60000)
             else:
-                self.client.add_time_ms(60000)
+                src = self.client.get_timer_source()
+                if src.startswith('aux'):
+                    self.client.add_aux_time_ms(int(src[-1]), 60000)
 
     def timer_control_remove_minute(self):
         if self.client:
-            if self.config.get_addtime_affects_event_duration():
-                self.client.change_current_event_duration(-60000)
+            if self.client.get_timer_source() == 'main':
+                if self.config.get_addtime_affects_event_duration():
+                    self.client.change_current_event_duration(-60000)
+                else:
+                    self.client.remove_time_ms(60000)
             else:
-                self.client.remove_time_ms(60000)
+                src = self.client.get_timer_source()
+                if src.startswith('aux'):
+                    self.client.add_aux_time_ms(int(src[-1]), -60000)
 
     def toggle_addtime_affects_event_duration(self):
         value = not self.config.get_addtime_affects_event_duration()
@@ -511,6 +589,23 @@ class FloatTimeWindow(QMainWindow):
         self.config.set_hover_controls_enabled(value)
         if not value:
             self._hide_controls_overlays()
+        self.tray_manager.update_menu_states()
+
+    def set_timer_source(self, source: str):
+        """Switch displayed timer to main, aux1/aux2/aux3, or system clock."""
+        if source == 'clock':
+            self.timer_widget.set_display_mode('clock')
+            self.config.set_display_mode('clock')
+            self.tray_manager.update_menu_states()
+            return
+        if source not in ('main', 'aux1', 'aux2', 'aux3'):
+            return
+        self.timer_widget.set_display_mode('timer')
+        self.config.set_display_mode('timer')
+        self.config.set_timer_source(source)
+        self._apply_timer_source_to_ui()
+        if self.client:
+            self.client.refresh_display()
         self.tray_manager.update_menu_states()
 
     def show_window(self):

@@ -124,3 +124,14 @@ class Config:
     def set_hover_controls_enabled(self, value: bool) -> bool:
         """Save whether on-hover control overlays are enabled."""
         return self.set('hover_controls_enabled', bool(value))
+
+    def get_timer_source(self) -> str:
+        """Get which timer to display: 'main', 'aux1', 'aux2', 'aux3'."""
+        v = self.get('timer_source', 'main')
+        return v if v in ('main', 'aux1', 'aux2', 'aux3') else 'main'
+
+    def set_timer_source(self, value: str) -> bool:
+        """Save which timer to display."""
+        if value not in ('main', 'aux1', 'aux2', 'aux3'):
+            return False
+        return self.set('timer_source', value)

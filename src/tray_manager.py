@@ -76,13 +76,6 @@ class TrayIconManager(QObject):
         menu.addAction(self.hover_controls_action)
         
         menu.addSeparator()
-        
-        # Display mode toggle
-        self.display_mode_action = QAction("Show Clock", self.window)
-        self.display_mode_action.setCheckable(True)
-        self.display_mode_action.setChecked(False)
-        self.display_mode_action.triggered.connect(self.window.toggle_display_mode)
-        menu.addAction(self.display_mode_action)
 
         # +/- 1 also change event length
         self.addtime_affects_duration_action = QAction("+/- 1 changes event length", self.window)
@@ -90,11 +83,21 @@ class TrayIconManager(QObject):
         self.addtime_affects_duration_action.setChecked(self.window.config.get_addtime_affects_event_duration())
         self.addtime_affects_duration_action.triggered.connect(self.window.toggle_addtime_affects_event_duration)
         menu.addAction(self.addtime_affects_duration_action)
-        
-        menu.addSeparator()
 
+        # Timer source submenu (Main, Aux 1, Aux 2, Aux 3, System clock)
+        timer_src_menu = QMenu("Timer source", menu)
+        is_clock = self.window.timer_widget.display_mode == 'clock'
+        current_src = self.window.config.get_timer_source()
+        for label, value in [("Main", "main"), ("Aux 1", "aux1"), ("Aux 2", "aux2"), ("Aux 3", "aux3"), ("System clock", "clock")]:
+            a = QAction(label, self.window)
+            a.setCheckable(True)
+            a.setChecked((value == "clock" and is_clock) or (value != "clock" and not is_clock and current_src == value))
+            a.triggered.connect(lambda checked, v=value: self.window.set_timer_source(v))
+            timer_src_menu.addAction(a)
+        menu.addMenu(timer_src_menu)
+        
         # Timer controls submenu
-        timer_menu = QMenu("Timer", menu)
+        timer_menu = QMenu("Timer controls", menu)
         start_action = QAction("Start", self.window)
         start_action.triggered.connect(self.window.timer_control_start)
         timer_menu.addAction(start_action)
@@ -174,12 +177,6 @@ class TrayIconManager(QObject):
         """Update the checked states of menu actions based on window state."""
         self.background_visible_action.setChecked(self.window.config.get_background_visible())
         self.locked_action.setChecked(self.window.is_locked)
-        
-        current_mode = self.window.timer_widget.display_mode
-        self.display_mode_action.blockSignals(True)
-        self.display_mode_action.setChecked(current_mode == 'clock')
-        self.display_mode_action.setText("Show Timer" if current_mode == 'clock' else "Show Clock")
-        self.display_mode_action.blockSignals(False)
         
         self.always_on_top_action.setChecked(
             bool(self.window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)

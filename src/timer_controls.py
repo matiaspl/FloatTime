@@ -67,18 +67,31 @@ class TopControlOverlay(QWidget):
 
 
 class BottomControlOverlay(QWidget):
-    """Bottom overlay with previous, play, pause, restart, next buttons."""
+    """Bottom overlay: main = prev, play, pause, restart, next; aux = play, pause, stop."""
 
     start_clicked = pyqtSignal()
     pause_clicked = pyqtSignal()
     restart_clicked = pyqtSignal()
+    stop_clicked = pyqtSignal()
     previous_clicked = pyqtSignal()
     next_clicked = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMouseTracking(True)
+        self._mode = 'main'
         self.setup_ui()
+
+    def set_mode(self, mode: str):
+        """Switch between 'main' (prev, play, pause, restart, next) and 'aux' (play, pause, stop)."""
+        if mode not in ('main', 'aux'):
+            return
+        self._mode = mode
+        is_main = mode == 'main'
+        self.prev_btn.setVisible(is_main)
+        self.restart_btn.setVisible(is_main)
+        self.next_btn.setVisible(is_main)
+        self.stop_btn.setVisible(not is_main)
 
     def setup_ui(self):
         layout = QHBoxLayout(self)
@@ -87,49 +100,60 @@ class BottomControlOverlay(QWidget):
 
         _icon_font = QFont("Arial", 14, QFont.Weight.Bold)
 
-        # Previous event
-        prev_btn = QPushButton("\u2039")  # Single left angle
-        prev_btn.setStyleSheet(_BTN_STYLE)
-        prev_btn.setFont(_icon_font)
-        prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        prev_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        prev_btn.clicked.connect(self.previous_clicked.emit)
+        # Previous event (main only)
+        self.prev_btn = QPushButton("\u2039")
+        self.prev_btn.setStyleSheet(_BTN_STYLE)
+        self.prev_btn.setFont(_icon_font)
+        self.prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.prev_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.prev_btn.clicked.connect(self.previous_clicked.emit)
 
-        # Play, Pause, Restart
-        play_btn = QPushButton("\u25B6")  # Play triangle
+        # Play, Pause
+        play_btn = QPushButton("\u25B6")
         play_btn.setStyleSheet(_BTN_STYLE)
         play_btn.setFont(_icon_font)
         play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         play_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         play_btn.clicked.connect(self.start_clicked.emit)
 
-        pause_btn = QPushButton("\u23F8")  # Pause
+        pause_btn = QPushButton("\u23F8")
         pause_btn.setStyleSheet(_BTN_STYLE)
         pause_btn.setFont(_icon_font)
         pause_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         pause_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         pause_btn.clicked.connect(self.pause_clicked.emit)
 
-        restart_btn = QPushButton("\u21BB")  # Restart / redo
-        restart_btn.setStyleSheet(_BTN_STYLE)
-        restart_btn.setFont(_icon_font)
-        restart_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        restart_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        restart_btn.clicked.connect(self.restart_clicked.emit)
+        # Restart (main only)
+        self.restart_btn = QPushButton("\u21BB")
+        self.restart_btn.setStyleSheet(_BTN_STYLE)
+        self.restart_btn.setFont(_icon_font)
+        self.restart_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.restart_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.restart_btn.clicked.connect(self.restart_clicked.emit)
 
-        # Next event
-        next_btn = QPushButton("\u203A")  # Single right angle
-        next_btn.setStyleSheet(_BTN_STYLE)
-        next_btn.setFont(_icon_font)
-        next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        next_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        next_btn.clicked.connect(self.next_clicked.emit)
+        # Stop (aux only)
+        self.stop_btn = QPushButton("\u25A0")  # Stop square
+        self.stop_btn.setStyleSheet(_BTN_STYLE)
+        self.stop_btn.setFont(_icon_font)
+        self.stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.stop_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.stop_btn.clicked.connect(self.stop_clicked.emit)
+        self.stop_btn.setVisible(False)
 
-        layout.addWidget(prev_btn)
+        # Next event (main only)
+        self.next_btn = QPushButton("\u203A")
+        self.next_btn.setStyleSheet(_BTN_STYLE)
+        self.next_btn.setFont(_icon_font)
+        self.next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.next_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.next_btn.clicked.connect(self.next_clicked.emit)
+
+        layout.addWidget(self.prev_btn)
         layout.addWidget(play_btn)
         layout.addWidget(pause_btn)
-        layout.addWidget(restart_btn)
-        layout.addWidget(next_btn)
+        layout.addWidget(self.restart_btn)
+        layout.addWidget(self.stop_btn)
+        layout.addWidget(self.next_btn)
 
         self.setStyleSheet(_OVERLAY_STYLE)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)

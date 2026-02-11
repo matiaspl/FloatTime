@@ -54,6 +54,7 @@ class TimerData:
     duration: Optional[float] = None
     blink: bool = False
     blackout: bool = False
+    timer_source: str = 'main'  # 'main' | 'aux1' | 'aux2' | 'aux3'
     timer_dict: Dict[str, Any] = field(default_factory=dict)
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
@@ -80,6 +81,9 @@ class OntimeClient:
         self.cached_duration: Optional[float] = None
         self.cached_has_next_event: bool = False
         self.cached_has_previous_event: bool = False
+        self._timer_source: str = 'main'  # 'main' | 'aux1' | 'aux2' | 'aux3'
+        self.last_main_data: Optional[TimerData] = None
+        self.last_aux_data: Dict[str, Optional[TimerData]] = {'1': None, '2': None, '3': None}
         self.use_websocket = use_websocket and (SOCKETIO_AVAILABLE or WEBSOCKET_AVAILABLE)
         self.websocket_connected = False
         self._ws_send_lock = Lock()
@@ -88,6 +92,17 @@ class OntimeClient:
         """Unified parser for Ontime API responses."""
         if not isinstance(raw_data, dict):
             return None
+
+        # Parse auxiliary timers when present (full poll or granular ontime-auxtimerN)
+        for aux_id in ('1', '2', '3'):
+            key = f'auxtimer{aux_id}'
+            if key in raw_data and isinstance(raw_data.get(key), dict):
+                self.last_aux_data[aux_id] = self._aux_to_timer_data(aux_id, raw_data[key])
+
+        # If this message only contains aux timer data, skip main parsing
+        if not any(raw_data.get(k) for k in ('timer', 'eventNow', 'currentEvent', 'eventNext')):
+            if any(f'auxtimer{i}' in raw_data for i in ('1', '2', '3')):
+                return self._get_display_data()
 
         # Extract nested structures (use `or {}` to handle explicit null values)
         timer_dict = raw_data.get('timer')
@@ -207,10 +222,11 @@ class OntimeClient:
             if 'blackout' in t:
                 self.last_blackout = bool(t['blackout'])
 
-        # Message-only payload: merge blink/blackout into last_timer_data so we don't reset the display
-        if not has_timer_data and self.last_timer_data is not None:
+        # Message-only payload: merge blink/blackout into last_main_data so we don't reset the display
+        if not has_timer_data and self.last_main_data is not None:
             if not raw_data.get('currentEvent') and not raw_data.get('eventNow'):
-                return replace(self.last_timer_data, blink=self.last_blink, blackout=self.last_blackout)
+                self.last_main_data = replace(self.last_main_data, blink=self.last_blink, blackout=self.last_blackout)
+                return self._get_display_data()
 
         # Extract thresholds, update cache if present, or use cached values
         time_warning = current_event.get('timeWarning') or timer_dict.get('timeWarning')
@@ -231,7 +247,7 @@ class OntimeClient:
         elif self.cached_duration is not None:
             duration = self.cached_duration
 
-        data = TimerData(
+        main_data = TimerData(
             timer_ms=timer_ms,
             timer_type=timer_type,
             title=current_event.get('title', raw_data.get('title', "")),
@@ -245,11 +261,68 @@ class OntimeClient:
             duration=duration,
             blink=self.last_blink,
             blackout=self.last_blackout,
+            timer_source='main',
             timer_dict=timer_dict,
             raw_data=raw_data
         )
-        
-        return data
+        if raw_data.get('timer') is not None or raw_data.get('eventNow') or raw_data.get('currentEvent'):
+            self.last_main_data = main_data
+        return self._get_display_data()
+
+    def _aux_to_timer_data(self, aux_id: str, aux: Dict[str, Any]) -> TimerData:
+        """Build TimerData from an auxiliary timer dict (duration, current, playback, direction)."""
+        if not isinstance(aux, dict):
+            return TimerData(timer_source=f'aux{aux_id}', title=f'Aux {aux_id}')
+        direction = (aux.get('direction') or 'count-down').lower().replace('-', ' ')
+        timer_type = 'count up' if 'up' in direction else 'count down'
+        playback = aux.get('playback', 'stop')
+        running = playback == 'play'
+        current = aux.get('current')
+        duration = aux.get('duration') if isinstance(aux.get('duration'), (int, float)) else None
+        return TimerData(
+            timer_ms=current,
+            timer_type=timer_type,
+            title=f'Aux {aux_id}',
+            next_event_title='',
+            has_next_event=False,
+            has_previous_event=False,
+            status=playback,
+            running=running,
+            time_warning=None,
+            time_danger=None,
+            duration=duration,
+            blink=self.last_blink,
+            blackout=self.last_blackout,
+            timer_source=f'aux{aux_id}',
+            timer_dict=aux,
+            raw_data=aux
+        )
+
+    def _get_display_data(self) -> Optional[TimerData]:
+        """Return TimerData for the currently selected source (main or aux1/2/3)."""
+        if self._timer_source == 'main':
+            out = self.last_main_data
+        else:
+            # aux1 -> "1"
+            key = self._timer_source[-1]
+            out = self.last_aux_data.get(key)
+        if out is None:
+            out = TimerData(timer_source=self._timer_source, title='Aux' if self._timer_source != 'main' else '')
+        return out
+
+    def set_timer_source(self, source: str):
+        """Set which timer to display: 'main', 'aux1', 'aux2', 'aux3'."""
+        if source in ('main', 'aux1', 'aux2', 'aux3'):
+            self._timer_source = source
+
+    def get_timer_source(self) -> str:
+        return self._timer_source
+
+    def refresh_display(self):
+        """Re-send current display data (e.g. after changing timer source)."""
+        data = self._get_display_data()
+        if data:
+            self._notify(data)
 
     def _notify(self, data: TimerData):
         """Invoke update callback with new data."""
@@ -291,11 +364,19 @@ class OntimeClient:
             raw = json.loads(message)
             if not isinstance(raw, dict):
                 return
-            # Handle Ontime format: { "tag": "poll", "payload": {...} } or { "type": "ontime-eventNow", "payload": {...} }
+            # Handle Ontime format: { "tag": "poll", "payload": {...} } or { "type": "ontime-*", "payload": {...} }
             if 'tag' in raw:
                 payload = raw.get('payload', raw)
-            elif 'type' in raw and raw.get('type', '').startswith('ontime-'):
+            elif 'type' in raw:
+                t = raw.get('type', '')
                 payload = raw.get('payload', raw)
+                # Granular aux timer updates: wrap so _parse_data sees auxtimer1/2/3 key
+                if t == 'ontime-auxtimer1':
+                    payload = {'auxtimer1': payload} if isinstance(payload, dict) else {'auxtimer1': {}}
+                elif t == 'ontime-auxtimer2':
+                    payload = {'auxtimer2': payload} if isinstance(payload, dict) else {'auxtimer2': {}}
+                elif t == 'ontime-auxtimer3':
+                    payload = {'auxtimer3': payload} if isinstance(payload, dict) else {'auxtimer3': {}}
             else:
                 payload = raw
             data = self._parse_data(payload)
@@ -410,6 +491,30 @@ class OntimeClient:
             return False
         self.last_current_event_duration = new_duration
         return True
+
+    def start_aux_timer(self, aux_id: int) -> bool:
+        """Start auxiliary timer 1, 2, or 3."""
+        if aux_id not in (1, 2, 3):
+            return False
+        return self._send_ws({"tag": "auxtimer", "payload": {str(aux_id): "start"}})
+
+    def pause_aux_timer(self, aux_id: int) -> bool:
+        """Pause auxiliary timer 1, 2, or 3."""
+        if aux_id not in (1, 2, 3):
+            return False
+        return self._send_ws({"tag": "auxtimer", "payload": {str(aux_id): "pause"}})
+
+    def stop_aux_timer(self, aux_id: int) -> bool:
+        """Stop auxiliary timer 1, 2, or 3."""
+        if aux_id not in (1, 2, 3):
+            return False
+        return self._send_ws({"tag": "auxtimer", "payload": {str(aux_id): "stop"}})
+
+    def add_aux_time_ms(self, aux_id: int, ms: int) -> bool:
+        """Add time to auxiliary timer (e.g. 60000 for +1 minute)."""
+        if aux_id not in (1, 2, 3):
+            return False
+        return self._send_ws({"tag": "auxtimer", "payload": {str(aux_id): {"addtime": ms}}})
 
     def set_timer_blackout(self, blackout: bool) -> bool:
         """Set timer screen blackout on or off."""
