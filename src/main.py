@@ -367,73 +367,127 @@ class FloatTimeWindow(QMainWindow):
         for key, func in [("Ctrl+Q", self.quit_application), ("Ctrl+W", self.quit_application), ("Escape", self.hide)]:
             QShortcut(QKeySequence(key), self).activated.connect(func)
 
-    def show_context_menu(self, pos):
-        menu = QMenu(self)
+    def build_app_menu(self, parent=None):
+        """Build the shared application menu (tray and context). Returns (menu, action_refs)."""
+        parent = parent or self
+        menu = QMenu(parent)
+        refs = {}
         
-        # Re-use logic from tray manager or define standard actions
+        def do_show_hide():
+            if self.isVisible():
+                self.hide()
+            else:
+                self.show_window()
+        
         actions = [
             ("Configure...", self.show_config_dialog),
-            (None, None), # Separator
-            ("Hide", self.hide),
-            ("Always on Top", self.toggle_always_on_top, True, bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)),
-            ("Show Background", self.toggle_background, True, self.timer_widget.background_visible),
-            ("Lock in Place", self.toggle_locked, True, self.is_locked),
-            ("On-hover controls", self.toggle_hover_controls, True, self.config.get_hover_controls_enabled()),
             (None, None),
-            ("+/- 1 changes event length", self.toggle_addtime_affects_event_duration, True, self.config.get_addtime_affects_event_duration()),
+            ("show_hide", do_show_hide),  # special: label set from visibility
+            ("Always on Top", self.toggle_always_on_top, True, bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint), "always_on_top"),
+            ("Show Background", self.toggle_background, True, self.timer_widget.background_visible, "background_visible"),
+            ("Lock in Place", self.toggle_locked, True, self.is_locked, "locked"),
+            ("On-hover controls", self.toggle_hover_controls, True, self.config.get_hover_controls_enabled(), "hover_controls"),
             (None, None),
-            ("Timer source", None),  # Submenu added below
+            ("+/- 1 changes event length", self.toggle_addtime_affects_event_duration, True, self.config.get_addtime_affects_event_duration(), "addtime_affects_duration"),
+            (None, None),
+            ("Timer source", None),
             (None, None),
             ("Reset Size", self.reset_window_size),
             (None, None),
             ("Quit", self.quit_application)
         ]
         
-        for text, func, *extra in actions:
-            if text is None:
+        for item in actions:
+            if item[0] is None:
                 menu.addSeparator()
-            elif text == "Timer source":
-                src_menu = QMenu("Timer source", self)
+                continue
+            text, func = item[0], item[1]
+            if text == "Timer source":
+                src_menu = QMenu("Timer source", parent)
                 is_clock = self.timer_widget.display_mode == 'clock'
                 current = self.config.get_timer_source()
                 for label, value in [("Main", "main"), ("Aux 1", "aux1"), ("Aux 2", "aux2"), ("Aux 3", "aux3"), ("System clock", "clock")]:
-                    a = QAction(label, self)
+                    a = QAction(label, parent)
                     a.setCheckable(True)
                     a.setChecked((value == "clock" and is_clock) or (value != "clock" and not is_clock and current == value))
                     a.triggered.connect(lambda checked, v=value: self.set_timer_source(v))
                     src_menu.addAction(a)
+                    refs[f"timer_source_{value}"] = a
                 menu.addMenu(src_menu)
-            else:
-                action = QAction(text, self)
-                if extra:
-                    action.setCheckable(extra[0])
-                    action.setChecked(extra[1])
-                action.triggered.connect(func)
-                if text == "Reset Size":
-                    # Insert Timer submenu before Reset Size
-                    timer_menu = QMenu("Timer controls", self)
-                    for item in [
-                        ("Start", self.timer_control_start),
-                        ("Pause", self.timer_control_pause),
-                        ("Restart", self.timer_control_reload),
-                        ("Previous event", self.timer_control_previous_event),
-                        ("Next event", self.timer_control_next_event),
-                        ("+1 min", self.timer_control_add_minute),
-                        ("-1 min", self.timer_control_remove_minute),
-                        ("Blink", self.timer_control_blink, True, lambda: self._blink_on),
-                        ("Blackout", self.timer_control_blackout, True, lambda: self._blackout_on),
-                    ]:
-                        label, fn = item[0], item[1]
-                        a = QAction(label, self)
-                        a.triggered.connect(fn)
-                        if len(item) >= 4 and item[2]:
-                            a.setCheckable(True)
-                            a.setChecked(item[3]() if callable(item[3]) else item[3])
-                        timer_menu.addAction(a)
-                    menu.addMenu(timer_menu)
-                    menu.addSeparator()
+                continue
+            if text == "show_hide":
+                action = QAction("Hide" if self.isVisible() else "Show", parent)
+                action.triggered.connect(do_show_hide)
+                refs["show_hide"] = action
                 menu.addAction(action)
+                continue
+            # (text, func) or (text, func, checkable, checked, ref_key)
+            extra = list(item[2:]) if len(item) > 2 else []
+            ref_key = extra.pop() if len(extra) == 3 else None  # last optional is ref key
+            action = QAction(text, parent)
+            if len(extra) >= 2:
+                action.setCheckable(extra[0])
+                action.setChecked(extra[1])
+                if ref_key:
+                    refs[ref_key] = action
+            action.triggered.connect(func)
+            if text == "Reset Size":
+                timer_menu = QMenu("Timer controls", parent)
+                for titem in [
+                    ("Start", self.timer_control_start),
+                    ("Pause", self.timer_control_pause),
+                    ("Restart", self.timer_control_reload),
+                    ("Previous event", self.timer_control_previous_event),
+                    ("Next event", self.timer_control_next_event),
+                    ("+1 min", self.timer_control_add_minute),
+                    ("-1 min", self.timer_control_remove_minute),
+                    ("Blink", self.timer_control_blink, True, lambda: self._blink_on, "blink"),
+                    ("Blackout", self.timer_control_blackout, True, lambda: self._blackout_on, "blackout"),
+                ]:
+                    label, fn = titem[0], titem[1]
+                    a = QAction(label, parent)
+                    a.triggered.connect(fn)
+                    if len(titem) >= 5 and titem[2]:
+                        a.setCheckable(True)
+                        a.setChecked(titem[3]() if callable(titem[3]) else titem[3])
+                        refs[titem[4]] = a
+                    timer_menu.addAction(a)
+                menu.addMenu(timer_menu)
+                menu.addSeparator()
+            menu.addAction(action)
         
+        return menu, refs
+
+    def update_menu_states(self):
+        """Update checked state and Show/Hide text for the shared menu (used by tray)."""
+        refs = getattr(self, '_menu_action_refs', None)
+        if not refs:
+            return
+        if 'show_hide' in refs:
+            refs['show_hide'].setText("Hide" if self.isVisible() else "Show")
+        if 'always_on_top' in refs:
+            refs['always_on_top'].setChecked(bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint))
+        if 'background_visible' in refs:
+            refs['background_visible'].setChecked(self.timer_widget.background_visible)
+        if 'locked' in refs:
+            refs['locked'].setChecked(self.is_locked)
+        if 'hover_controls' in refs:
+            refs['hover_controls'].setChecked(self.config.get_hover_controls_enabled())
+        if 'addtime_affects_duration' in refs:
+            refs['addtime_affects_duration'].setChecked(self.config.get_addtime_affects_event_duration())
+        if 'blink' in refs:
+            refs['blink'].setChecked(self._blink_on)
+        if 'blackout' in refs:
+            refs['blackout'].setChecked(self._blackout_on)
+        is_clock = self.timer_widget.display_mode == 'clock'
+        current = self.config.get_timer_source()
+        for value in ('main', 'aux1', 'aux2', 'aux3', 'clock'):
+            key = f'timer_source_{value}'
+            if key in refs:
+                refs[key].setChecked((value == "clock" and is_clock) or (value != "clock" and not is_clock and current == value))
+
+    def show_context_menu(self, pos):
+        menu, _ = self.build_app_menu(self)
         menu.exec(self.mapToGlobal(pos))
 
     def load_configuration(self):
@@ -462,7 +516,7 @@ class FloatTimeWindow(QMainWindow):
         self._blink_on = data.blink
         self._blackout_on = data.blackout
         self.bottom_overlay.set_mode('aux' if data.timer_source != 'main' else 'main')
-        self.tray_manager.update_menu_states()
+        self.update_menu_states()
         self.timer_widget.update_timer(data)
 
     def show_config_dialog(self):
@@ -477,18 +531,18 @@ class FloatTimeWindow(QMainWindow):
         new_mode = 'clock' if self.timer_widget.display_mode == 'timer' else 'timer'
         self.timer_widget.set_display_mode(new_mode)
         self.config.set_display_mode(new_mode)
-        self.tray_manager.update_menu_states()
+        self.update_menu_states()
 
     def toggle_background(self):
         visible = not self.timer_widget.background_visible
         self.timer_widget.set_background_visible(visible)
         self.config.set_background_visible(visible)
-        self.tray_manager.update_menu_states()
+        self.update_menu_states()
 
     def toggle_locked(self):
         self.is_locked = not self.is_locked
         self.config.set_locked(self.is_locked)
-        self.tray_manager.update_menu_states()
+        self.update_menu_states()
         if not self.is_locked: self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def toggle_always_on_top(self):
@@ -502,7 +556,7 @@ class FloatTimeWindow(QMainWindow):
             new_flags |= Qt.WindowType.WindowDoesNotAcceptFocus
         self.setWindowFlags(new_flags)
         self.show()
-        self.tray_manager.update_menu_states()
+        self.update_menu_states()
 
     def reset_window_size(self):
         self.resize(300, 150)
@@ -547,13 +601,13 @@ class FloatTimeWindow(QMainWindow):
         self._blink_on = not self._blink_on
         if self.client:
             self.client.set_timer_blink(self._blink_on)
-        self.tray_manager.update_menu_states()
+        self.update_menu_states()
 
     def timer_control_blackout(self):
         self._blackout_on = not self._blackout_on
         if self.client:
             self.client.set_timer_blackout(self._blackout_on)
-        self.tray_manager.update_menu_states()
+        self.update_menu_states()
 
     def timer_control_add_minute(self):
         if self.client:
@@ -582,21 +636,21 @@ class FloatTimeWindow(QMainWindow):
     def toggle_addtime_affects_event_duration(self):
         value = not self.config.get_addtime_affects_event_duration()
         self.config.set_addtime_affects_event_duration(value)
-        self.tray_manager.update_menu_states()
+        self.update_menu_states()
 
     def toggle_hover_controls(self):
         value = not self.config.get_hover_controls_enabled()
         self.config.set_hover_controls_enabled(value)
         if not value:
             self._hide_controls_overlays()
-        self.tray_manager.update_menu_states()
+        self.update_menu_states()
 
     def set_timer_source(self, source: str):
         """Switch displayed timer to main, aux1/aux2/aux3, or system clock."""
         if source == 'clock':
             self.timer_widget.set_display_mode('clock')
             self.config.set_display_mode('clock')
-            self.tray_manager.update_menu_states()
+            self.update_menu_states()
             return
         if source not in ('main', 'aux1', 'aux2', 'aux3'):
             return
@@ -606,7 +660,7 @@ class FloatTimeWindow(QMainWindow):
         self._apply_timer_source_to_ui()
         if self.client:
             self.client.refresh_display()
-        self.tray_manager.update_menu_states()
+        self.update_menu_states()
 
     def show_window(self):
         self.show()

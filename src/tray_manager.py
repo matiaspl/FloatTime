@@ -1,6 +1,6 @@
 """Tray icon management for FloatTime."""
-from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
-from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QBrush, QPen
+from PyQt6.QtWidgets import QSystemTrayIcon
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush, QPen
 from PyQt6.QtCore import Qt, QObject
 from logger import get_logger
 
@@ -25,129 +25,15 @@ class TrayIconManager(QObject):
         self.tray_icon.setIcon(self._create_tray_icon())
         self.tray_icon.setToolTip("FloatTime - Ontime Overlay Timer")
         
-        # Create tray menu
-        tray_menu = self._create_menu()
-        self.tray_icon.setContextMenu(tray_menu)
+        # Use shared menu from window
+        menu, action_refs = self.window.build_app_menu(parent=None)
+        self.window._menu_action_refs = action_refs
+        self.tray_icon.setContextMenu(menu)
+        menu.aboutToShow.connect(self.window.update_menu_states)
         
         # Connect signals
         self.tray_icon.activated.connect(self._on_activated)
         self.tray_icon.show()
-
-    def _create_menu(self) -> QMenu:
-        """Create the tray context menu."""
-        menu = QMenu()
-        
-        # Configure action
-        config_action = QAction("Configure...", self.window)
-        config_action.triggered.connect(self.window.show_config_dialog)
-        menu.addAction(config_action)
-        
-        # Show/Hide action
-        self.show_action = QAction("Show", self.window)
-        self.show_action.triggered.connect(self.window.show_window)
-        menu.addAction(self.show_action)
-        
-        # Always on top toggle
-        self.always_on_top_action = QAction("Always on Top", self.window)
-        self.always_on_top_action.setCheckable(True)
-        self.always_on_top_action.setChecked(True)
-        self.always_on_top_action.triggered.connect(self.window.toggle_always_on_top)
-        menu.addAction(self.always_on_top_action)
-        
-        # Background visibility toggle
-        self.background_visible_action = QAction("Show Background", self.window)
-        self.background_visible_action.setCheckable(True)
-        self.background_visible_action.setChecked(self.window.config.get_background_visible())
-        self.background_visible_action.triggered.connect(self.window.toggle_background)
-        menu.addAction(self.background_visible_action)
-        
-        # Lock in place toggle
-        self.locked_action = QAction("Lock in Place", self.window)
-        self.locked_action.setCheckable(True)
-        self.locked_action.setChecked(self.window.is_locked)
-        self.locked_action.triggered.connect(self.window.toggle_locked)
-        menu.addAction(self.locked_action)
-
-        # On-hover controls toggle
-        self.hover_controls_action = QAction("On-hover controls", self.window)
-        self.hover_controls_action.setCheckable(True)
-        self.hover_controls_action.setChecked(self.window.config.get_hover_controls_enabled())
-        self.hover_controls_action.triggered.connect(self.window.toggle_hover_controls)
-        menu.addAction(self.hover_controls_action)
-        
-        menu.addSeparator()
-
-        # +/- 1 also change event length
-        self.addtime_affects_duration_action = QAction("+/- 1 changes event length", self.window)
-        self.addtime_affects_duration_action.setCheckable(True)
-        self.addtime_affects_duration_action.setChecked(self.window.config.get_addtime_affects_event_duration())
-        self.addtime_affects_duration_action.triggered.connect(self.window.toggle_addtime_affects_event_duration)
-        menu.addAction(self.addtime_affects_duration_action)
-
-        # Timer source submenu (Main, Aux 1, Aux 2, Aux 3, System clock)
-        timer_src_menu = QMenu("Timer source", menu)
-        is_clock = self.window.timer_widget.display_mode == 'clock'
-        current_src = self.window.config.get_timer_source()
-        for label, value in [("Main", "main"), ("Aux 1", "aux1"), ("Aux 2", "aux2"), ("Aux 3", "aux3"), ("System clock", "clock")]:
-            a = QAction(label, self.window)
-            a.setCheckable(True)
-            a.setChecked((value == "clock" and is_clock) or (value != "clock" and not is_clock and current_src == value))
-            a.triggered.connect(lambda checked, v=value: self.window.set_timer_source(v))
-            timer_src_menu.addAction(a)
-        menu.addMenu(timer_src_menu)
-        
-        # Timer controls submenu
-        timer_menu = QMenu("Timer controls", menu)
-        start_action = QAction("Start", self.window)
-        start_action.triggered.connect(self.window.timer_control_start)
-        timer_menu.addAction(start_action)
-        pause_action = QAction("Pause", self.window)
-        pause_action.triggered.connect(self.window.timer_control_pause)
-        timer_menu.addAction(pause_action)
-        reload_action = QAction("Restart", self.window)
-        reload_action.triggered.connect(self.window.timer_control_reload)
-        timer_menu.addAction(reload_action)
-        prev_event_action = QAction("Previous event", self.window)
-        prev_event_action.triggered.connect(self.window.timer_control_previous_event)
-        timer_menu.addAction(prev_event_action)
-        next_event_action = QAction("Next event", self.window)
-        next_event_action.triggered.connect(self.window.timer_control_next_event)
-        timer_menu.addAction(next_event_action)
-        timer_menu.addSeparator()
-        add_min_action = QAction("+1 min", self.window)
-        add_min_action.triggered.connect(self.window.timer_control_add_minute)
-        timer_menu.addAction(add_min_action)
-        remove_min_action = QAction("\u2212 1 min", self.window)
-        remove_min_action.triggered.connect(self.window.timer_control_remove_minute)
-        timer_menu.addAction(remove_min_action)
-        timer_menu.addSeparator()
-        self.blink_action = QAction("Blink", self.window)
-        self.blink_action.setCheckable(True)
-        self.blink_action.setChecked(False)
-        self.blink_action.triggered.connect(self.window.timer_control_blink)
-        timer_menu.addAction(self.blink_action)
-        self.blackout_action = QAction("Blackout", self.window)
-        self.blackout_action.setCheckable(True)
-        self.blackout_action.setChecked(False)
-        self.blackout_action.triggered.connect(self.window.timer_control_blackout)
-        timer_menu.addAction(self.blackout_action)
-        menu.addMenu(timer_menu)
-
-        menu.addSeparator()
-        
-        # Reset size action
-        reset_size_action = QAction("Reset Size", self.window)
-        reset_size_action.triggered.connect(self.window.reset_window_size)
-        menu.addAction(reset_size_action)
-        
-        menu.addSeparator()
-        
-        # Quit action
-        quit_action = QAction("Quit", self.window)
-        quit_action.triggered.connect(self.window.quit_application)
-        menu.addAction(quit_action)
-        
-        return menu
 
     def _create_tray_icon(self) -> QIcon:
         """Create a simple tray icon pixmap."""
@@ -172,19 +58,3 @@ class TrayIconManager(QObject):
         """Handle tray icon activation."""
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self.window.show_window()
-
-    def update_menu_states(self):
-        """Update the checked states of menu actions based on window state."""
-        self.background_visible_action.setChecked(self.window.config.get_background_visible())
-        self.locked_action.setChecked(self.window.is_locked)
-        
-        self.always_on_top_action.setChecked(
-            bool(self.window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
-        )
-        self.addtime_affects_duration_action.setChecked(
-            self.window.config.get_addtime_affects_event_duration()
-        )
-        self.hover_controls_action.setChecked(self.window.config.get_hover_controls_enabled())
-        self.blink_action.setChecked(self.window._blink_on)
-        self.blackout_action.setChecked(self.window._blackout_on)
-
