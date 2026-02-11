@@ -327,7 +327,7 @@ class FloatTimeWindow(QMainWindow):
 
     def _poll_mouse_position(self):
         """macOS: poll cursor position to detect hover since enter/leave don't work when inactive."""
-        if not self.isVisible() or not self.config.get_hover_controls_enabled():
+        if not self.isVisible() or not self.config.get_hover_controls_enabled() or self.timer_widget.display_mode == 'clock':
             if self._mouse_over_window:
                 self._mouse_over_window = False
                 self._overlay_hide_timer.start(300)
@@ -433,14 +433,17 @@ class FloatTimeWindow(QMainWindow):
             action.triggered.connect(func)
             if text == "Reset Size":
                 timer_menu = QMenu("Timer controls", parent)
+                is_clock = self.timer_widget.display_mode == 'clock'
+                current_src = self.config.get_timer_source()
+                in_aux = current_src in ('aux1', 'aux2', 'aux3')
                 for titem in [
-                    ("Start", self.timer_control_start),
-                    ("Pause", self.timer_control_pause),
-                    ("Restart", self.timer_control_reload),
-                    ("Previous event", self.timer_control_previous_event),
-                    ("Next event", self.timer_control_next_event),
-                    ("+1 min", self.timer_control_add_minute),
-                    ("-1 min", self.timer_control_remove_minute),
+                    ("Start", self.timer_control_start, "timer_start"),
+                    ("Pause", self.timer_control_pause, "timer_pause"),
+                    ("Restart", self.timer_control_reload, "timer_restart"),
+                    ("Previous event", self.timer_control_previous_event, "timer_prev_event"),
+                    ("Next event", self.timer_control_next_event, "timer_next_event"),
+                    ("+1 min", self.timer_control_add_minute, "timer_add_min"),
+                    ("-1 min", self.timer_control_remove_minute, "timer_remove_min"),
                     ("Blink", self.timer_control_blink, True, lambda: self._blink_on, "blink"),
                     ("Blackout", self.timer_control_blackout, True, lambda: self._blackout_on, "blackout"),
                 ]:
@@ -450,7 +453,16 @@ class FloatTimeWindow(QMainWindow):
                     if len(titem) >= 5 and titem[2]:
                         a.setCheckable(True)
                         a.setChecked(titem[3]() if callable(titem[3]) else titem[3])
-                        refs[titem[4]] = a
+                        ref_key = titem[4]
+                        refs[ref_key] = a
+                    else:
+                        ref_key = titem[2] if len(titem) >= 3 else None
+                        if ref_key:
+                            refs[ref_key] = a
+                    # Disable all timer controls in system clock mode; disable prev/next in aux1-3
+                    a.setEnabled(not is_clock)
+                    if ref_key in ('timer_prev_event', 'timer_next_event'):
+                        a.setEnabled(not is_clock and not in_aux)
                     timer_menu.addAction(a)
                 menu.addMenu(timer_menu)
                 menu.addSeparator()
@@ -481,10 +493,18 @@ class FloatTimeWindow(QMainWindow):
             refs['blackout'].setChecked(self._blackout_on)
         is_clock = self.timer_widget.display_mode == 'clock'
         current = self.config.get_timer_source()
+        in_aux = current in ('aux1', 'aux2', 'aux3')
         for value in ('main', 'aux1', 'aux2', 'aux3', 'clock'):
             key = f'timer_source_{value}'
             if key in refs:
                 refs[key].setChecked((value == "clock" and is_clock) or (value != "clock" and not is_clock and current == value))
+        # Timer controls: all disabled in system clock; prev/next disabled in aux1-3
+        for key in ('timer_start', 'timer_pause', 'timer_restart', 'timer_add_min', 'timer_remove_min', 'blink', 'blackout'):
+            if key in refs:
+                refs[key].setEnabled(not is_clock)
+        for key in ('timer_prev_event', 'timer_next_event'):
+            if key in refs:
+                refs[key].setEnabled(not is_clock and not in_aux)
 
     def show_context_menu(self, pos):
         menu, _ = self.build_app_menu(self)
@@ -531,6 +551,8 @@ class FloatTimeWindow(QMainWindow):
         new_mode = 'clock' if self.timer_widget.display_mode == 'timer' else 'timer'
         self.timer_widget.set_display_mode(new_mode)
         self.config.set_display_mode(new_mode)
+        if new_mode == 'clock':
+            self._hide_controls_overlays()
         self.update_menu_states()
 
     def toggle_background(self):
@@ -650,6 +672,7 @@ class FloatTimeWindow(QMainWindow):
         if source == 'clock':
             self.timer_widget.set_display_mode('clock')
             self.config.set_display_mode('clock')
+            self._hide_controls_overlays()
             self.update_menu_states()
             return
         if source not in ('main', 'aux1', 'aux2', 'aux3'):
@@ -831,7 +854,7 @@ class FloatTimeWindow(QMainWindow):
         # On macOS, hover is handled by _poll_mouse_position (works when app inactive)
         if sys.platform != "darwin":
             self._overlay_hide_timer.stop()
-            if self.config.get_hover_controls_enabled():
+            if self.config.get_hover_controls_enabled() and self.timer_widget.display_mode != 'clock':
                 self._position_control_overlays()
                 self.top_overlay.show()
                 self.bottom_overlay.show()
