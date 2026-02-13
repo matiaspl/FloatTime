@@ -1,7 +1,9 @@
 """On-hover timer control overlays with play, pause, restart, +1, -1 buttons."""
+import sys
+from pathlib import Path
 from PyQt6.QtWidgets import QWidget, QPushButton, QHBoxLayout, QSizePolicy
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QFontDatabase
 
 # Circular button style: dark background, white border, white text
 _BTN_STYLE = """
@@ -27,6 +29,37 @@ _BTN_STYLE = """
 _OVERLAY_STYLE = "background-color: rgba(0, 0, 0, 180); border-radius: 8px;"
 
 
+def _load_control_icon_font() -> str:
+    """Load Simple Line Icons font and return family name."""
+    if getattr(sys, 'frozen', False):
+        base = Path(getattr(sys, '_MEIPASS', Path(sys.executable).parent))
+    else:
+        base = Path(__file__).resolve().parent.parent
+    font_path = base / 'fonts' / 'Simple-Line-Icons.ttf'
+    if font_path.exists():
+        fid = QFontDatabase.addApplicationFont(str(font_path))
+        if fid != -1:
+            families = QFontDatabase.applicationFontFamilies(fid)
+            if families:
+                return families[0]
+    # Font is bundled with the app. Keep an explicit family name if runtime loading fails.
+    return "Simple-Line-Icons"
+
+
+def _resolve_control_icon_set():
+    """Resolve icon font family and glyph map at runtime (after QApplication exists)."""
+    family = _load_control_icon_font()
+    icons = {
+        "start": "\ue06f",   # control-start
+        "play": "\ue071",    # control-play
+        "pause": "\ue072",   # control-pause
+        "reload": "\ue099",  # reload
+        "end": "\ue074",     # control-end
+        "stop": "\ue073",    # control-stop
+    }
+    return family, icons
+
+
 class TopControlOverlay(QWidget):
     """Top overlay with +1 and -1 minute buttons."""
 
@@ -42,20 +75,21 @@ class TopControlOverlay(QWidget):
         layout = QHBoxLayout(self)
         layout.setSpacing(8)
         layout.setContentsMargins(8, 6, 8, 6)
+        icon_family = _load_control_icon_font()
 
         # -1 and +1 buttons (order: -1 on left, +1 on right)
         remove_btn = QPushButton("-1")
         remove_btn.setStyleSheet(_BTN_STYLE)
         remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         remove_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        remove_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        remove_btn.setFont(QFont(icon_family, 12, QFont.Weight.Bold))
         remove_btn.clicked.connect(self.remove_minute_clicked.emit)
 
         add_btn = QPushButton("+1")
         add_btn.setStyleSheet(_BTN_STYLE)
         add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         add_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        add_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        add_btn.setFont(QFont(icon_family, 12, QFont.Weight.Bold))
         add_btn.clicked.connect(self.add_minute_clicked.emit)
 
         layout.addWidget(remove_btn)
@@ -98,10 +132,11 @@ class BottomControlOverlay(QWidget):
         layout.setSpacing(8)
         layout.setContentsMargins(8, 6, 8, 6)
 
-        _icon_font = QFont("Arial", 14, QFont.Weight.Bold)
+        icon_family, icons = _resolve_control_icon_set()
+        _icon_font = QFont(icon_family, 12, QFont.Weight.Bold)
 
         # Previous event (main only)
-        self.prev_btn = QPushButton("\u2039")
+        self.prev_btn = QPushButton(icons["start"])
         self.prev_btn.setStyleSheet(_BTN_STYLE)
         self.prev_btn.setFont(_icon_font)
         self.prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -109,14 +144,14 @@ class BottomControlOverlay(QWidget):
         self.prev_btn.clicked.connect(self.previous_clicked.emit)
 
         # Play, Pause
-        play_btn = QPushButton("\u25B6")
+        play_btn = QPushButton(icons["play"])
         play_btn.setStyleSheet(_BTN_STYLE)
         play_btn.setFont(_icon_font)
         play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         play_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         play_btn.clicked.connect(self.start_clicked.emit)
 
-        pause_btn = QPushButton("\u23F8")
+        pause_btn = QPushButton(icons["pause"])
         pause_btn.setStyleSheet(_BTN_STYLE)
         pause_btn.setFont(_icon_font)
         pause_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -124,7 +159,7 @@ class BottomControlOverlay(QWidget):
         pause_btn.clicked.connect(self.pause_clicked.emit)
 
         # Restart (main only)
-        self.restart_btn = QPushButton("\u21BB")
+        self.restart_btn = QPushButton(icons["reload"])
         self.restart_btn.setStyleSheet(_BTN_STYLE)
         self.restart_btn.setFont(_icon_font)
         self.restart_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -132,7 +167,7 @@ class BottomControlOverlay(QWidget):
         self.restart_btn.clicked.connect(self.restart_clicked.emit)
 
         # Stop (aux only)
-        self.stop_btn = QPushButton("\u25A0")  # Stop square
+        self.stop_btn = QPushButton(icons["stop"])
         self.stop_btn.setStyleSheet(_BTN_STYLE)
         self.stop_btn.setFont(_icon_font)
         self.stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -141,7 +176,7 @@ class BottomControlOverlay(QWidget):
         self.stop_btn.setVisible(False)
 
         # Next event (main only)
-        self.next_btn = QPushButton("\u203A")
+        self.next_btn = QPushButton(icons["end"])
         self.next_btn.setStyleSheet(_BTN_STYLE)
         self.next_btn.setFont(_icon_font)
         self.next_btn.setCursor(Qt.CursorShape.PointingHandCursor)

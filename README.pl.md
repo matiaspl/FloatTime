@@ -77,6 +77,7 @@ Możesz edytować ten plik ręcznie lub użyć menu kontekstowego aplikacji.
   - **Czerwony** (`#FA5656`) - Próg niebezpieczeństwa (danger/overtime)
 - **Przezroczyste tło** - Opcja wyłączenia tła dla całkowicie przezroczystego okna
 - **Własna czcionka** - Timer i zegar używają Iosevka Fixed Curly z katalogu `fonts/` (fallback: Arial)
+- **Czcionka ikon sterowania** - Ikony przycisków w nakładkach hover używają Simple Line Icons z `fonts/Simple-Line-Icons.ttf`
 - **Wyśrodkowanie timera** - Tekst timera jest wyśrodkowany (całkowite sekundy; countdown używa ceiling, żeby nie pomijać pierwszej sekundy)
 
 ### Konfiguracja i zapis
@@ -269,3 +270,8 @@ Następnie uruchom aplikację. Logi pojawią się w konsoli.
 ## Licencja
 
 GNU GPL — szczegóły w pliku [LICENSE.md](LICENSE.md).
+
+## Uwaga o zewnętrznej czcionce
+
+Projekt używa czcionki Simple Line Icons do ikon sterowania:
+- [simplelineicons/simplelineicons.github.io](https://github.com/simplelineicons/simplelineicons.github.io)

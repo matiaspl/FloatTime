@@ -12,7 +12,7 @@ else:
     sys.path.insert(0, str(Path(__file__).parent))
 
 from PyQt6.QtWidgets import QApplication, QMainWindow, QMenu, QDialog
-from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QPointF, QPoint, QSize, QRect
+from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QPointF, QPoint, QSize, QRect, QEvent
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut, QCursor, QGuiApplication
 from logger import get_logger, DEBUG_LOGGING
 
@@ -242,7 +242,13 @@ class FloatTimeWindow(QMainWindow):
         self._overlay_hide_timer = QTimer(self)
         self._overlay_hide_timer.setSingleShot(True)
         self._overlay_hide_timer.timeout.connect(self._hide_controls_overlays)
+        self._overlay_idle_timer = QTimer(self)
+        self._overlay_idle_timer.setSingleShot(True)
+        self._overlay_idle_timer.timeout.connect(self._hide_controls_overlays_if_not_hovered)
+        self._overlay_idle_timeout_ms = 1500
         self._connect_control_overlays()
+        # Global mouse events to hide overlays on outside click and keep idle timeout fresh on interaction.
+        QApplication.instance().installEventFilter(self)
         
         # macOS: poll mouse position since enter/leave events don't work when inactive
         self._mouse_over_window = False
@@ -277,6 +283,31 @@ class FloatTimeWindow(QMainWindow):
         """Hide both control overlays."""
         self.top_overlay.hide()
         self.bottom_overlay.hide()
+        self._overlay_idle_timer.stop()
+
+    def _window_contains_global_pos(self, global_pos):
+        return self.frameGeometry().contains(global_pos)
+
+    def _overlay_contains_global_pos(self, global_pos):
+        top_rect = QRect(self.top_overlay.mapToGlobal(self.top_overlay.rect().topLeft()), self.top_overlay.size())
+        bottom_rect = QRect(self.bottom_overlay.mapToGlobal(self.bottom_overlay.rect().topLeft()), self.bottom_overlay.size())
+        return top_rect.contains(global_pos) or bottom_rect.contains(global_pos)
+
+    def _show_controls_overlays(self):
+        self._overlay_hide_timer.stop()
+        self._position_control_overlays()
+        self.top_overlay.show()
+        self.bottom_overlay.show()
+        self.top_overlay.raise_()
+        self.bottom_overlay.raise_()
+        self._overlay_idle_timer.start(self._overlay_idle_timeout_ms)
+
+    def _hide_controls_overlays_if_not_hovered(self):
+        pos = QCursor.pos()
+        if not (self._window_contains_global_pos(pos) or self._overlay_contains_global_pos(pos)):
+            self._hide_controls_overlays()
+        else:
+            self._overlay_idle_timer.start(self._overlay_idle_timeout_ms)
 
     def _poll_mouse_position(self):
         """macOS: poll cursor position to detect hover since enter/leave don't work when inactive."""
@@ -293,14 +324,13 @@ class FloatTimeWindow(QMainWindow):
         if is_over and not self._mouse_over_window:
             # Mouse entered
             self._mouse_over_window = True
-            self._overlay_hide_timer.stop()
-            self._position_control_overlays()
-            self.top_overlay.show()
-            self.bottom_overlay.show()
+            self._show_controls_overlays()
         elif not is_over and self._mouse_over_window:
             # Mouse left
             self._mouse_over_window = False
             self._overlay_hide_timer.start(300)
+        elif is_over and self.top_overlay.isVisible():
+            self._overlay_idle_timer.start(self._overlay_idle_timeout_ms)
 
     def _position_control_overlays(self):
         """Position overlays: +1/-1 at top, play/pause/restart at bottom, both centered."""
@@ -426,8 +456,91 @@ class FloatTimeWindow(QMainWindow):
                 menu.addMenu(timer_menu)
                 menu.addSeparator()
             menu.addAction(action)
-        
+        self._attach_menu_auto_dismiss(menu)
         return menu, refs
+
+    def _attach_menu_auto_dismiss(self, menu: QMenu):
+        """Close popup menu as soon as the cursor leaves the menu area.
+
+        - An *open grace* period (800 ms) lets the user move from the tray
+          icon to the menu before tracking starts (tray menus open away
+          from the cursor on Windows).
+        - A *leave grace* period (300 ms) prevents flicker when the cursor
+          travels between a parent menu item and its child submenu.
+        """
+        if getattr(menu, "_auto_dismiss_attached", False):
+            return
+
+        OPEN_GRACE_MS = 800     # ignore cursor position right after open
+        LEAVE_GRACE_MS = 300    # submenu-transition grace period
+        POLL_MS = 30            # cursor check interval (~33 fps)
+
+        state = {"tracking": False}   # start tracking only after open grace
+
+        open_timer = QTimer(menu)
+        open_timer.setSingleShot(True)
+        open_timer.setInterval(OPEN_GRACE_MS)
+
+        leave_timer = QTimer(menu)
+        leave_timer.setSingleShot(True)
+        leave_timer.setInterval(LEAVE_GRACE_MS)
+
+        poll_timer = QTimer(menu)
+        poll_timer.setInterval(POLL_MS)
+
+        def _cursor_over_any_menu() -> bool:
+            pos = QCursor.pos()
+            for w in QApplication.topLevelWidgets():
+                if isinstance(w, QMenu) and w.isVisible() and w.geometry().contains(pos):
+                    return True
+            popup = QApplication.activePopupWidget()
+            if isinstance(popup, QMenu) and popup.isVisible() and popup.geometry().contains(pos):
+                return True
+            return False
+
+        def _close_all():
+            for w in QApplication.topLevelWidgets():
+                if isinstance(w, QMenu) and w.isVisible():
+                    w.close()
+
+        def _on_open_grace_done():
+            state["tracking"] = True
+
+        def _on_leave_timeout():
+            if menu.isVisible() and not _cursor_over_any_menu():
+                _close_all()
+
+        def _poll():
+            if not menu.isVisible() or not state["tracking"]:
+                return
+            if _cursor_over_any_menu():
+                leave_timer.stop()
+            elif not leave_timer.isActive():
+                leave_timer.start()
+
+        def _on_show():
+            state["tracking"] = False
+            leave_timer.stop()
+            open_timer.start()
+            poll_timer.start()
+
+        def _on_hide():
+            poll_timer.stop()
+            open_timer.stop()
+            leave_timer.stop()
+            state["tracking"] = False
+
+        open_timer.timeout.connect(_on_open_grace_done)
+        leave_timer.timeout.connect(_on_leave_timeout)
+        poll_timer.timeout.connect(_poll)
+
+        menu.aboutToShow.connect(_on_show)
+        menu.aboutToHide.connect(_on_hide)
+
+        menu._auto_dismiss_attached = True
+        menu._auto_dismiss_open_timer = open_timer
+        menu._auto_dismiss_leave_timer = leave_timer
+        menu._auto_dismiss_poll_timer = poll_timer
 
     def update_menu_states(self):
         """Update checked state and Show/Hide text for the shared menu (used by tray)."""
@@ -837,6 +950,8 @@ class FloatTimeWindow(QMainWindow):
         pos = event.position().toPoint()
         corner = self._get_resize_corner(pos)
         self.setCursor(self._get_cursor(corner) if corner else Qt.CursorShape.ArrowCursor)
+        if self.top_overlay.isVisible() and self.config.get_hover_controls_enabled():
+            self._overlay_idle_timer.start(self._overlay_idle_timeout_ms)
         
         if self.is_locked or not (event.buttons() & Qt.MouseButton.LeftButton): return
         if not self._drag_or_resize_started:
@@ -924,13 +1039,8 @@ class FloatTimeWindow(QMainWindow):
     def enterEvent(self, event):
         # On macOS, hover is handled by _poll_mouse_position (works when app inactive)
         if sys.platform != "darwin":
-            self._overlay_hide_timer.stop()
             if self.config.get_hover_controls_enabled() and self.timer_widget.display_mode != 'clock':
-                self._position_control_overlays()
-                self.top_overlay.show()
-                self.bottom_overlay.show()
-                self.top_overlay.raise_()
-                self.bottom_overlay.raise_()
+                self._show_controls_overlays()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
@@ -938,6 +1048,20 @@ class FloatTimeWindow(QMainWindow):
         if sys.platform != "darwin":
             self._overlay_hide_timer.start(300)
         super().leaveEvent(event)
+
+    def eventFilter(self, obj, event):
+        # Global click-outside handling for hover overlays
+        if self.top_overlay.isVisible() or self.bottom_overlay.isVisible():
+            et = event.type()
+            if et == QEvent.Type.MouseMove:
+                pos = QCursor.pos()
+                if self._window_contains_global_pos(pos) or self._overlay_contains_global_pos(pos):
+                    self._overlay_idle_timer.start(self._overlay_idle_timeout_ms)
+            elif et == QEvent.Type.MouseButtonPress:
+                gpos = event.globalPosition().toPoint() if hasattr(event, "globalPosition") else QCursor.pos()
+                if not (self._window_contains_global_pos(gpos) or self._overlay_contains_global_pos(gpos)):
+                    self._hide_controls_overlays()
+        return super().eventFilter(obj, event)
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

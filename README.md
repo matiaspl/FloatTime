@@ -77,6 +77,7 @@ You can edit this file manually or use the app’s context menu.
   - **Red** (`#FA5656`) – Danger/overtime
 - **Transparent background** – Option to hide background for a fully transparent window
 - **Custom font** – Timer and clock use Iosevka Fixed Curly from `fonts/` (fallback: Arial)
+- **Control icon font** – On-hover control icons use Simple Line Icons from `fonts/Simple-Line-Icons.ttf`
 - **Timer centering** – Timer text is centered (integral seconds; countdown uses ceiling so the first second is not skipped)
 
 ### Shortcuts and persistence
@@ -258,3 +259,8 @@ Then run the app; logs appear in the console.
 ## License
 
 GNU GPL — see [LICENSE.md](LICENSE.md).
+
+## Third-party font note
+
+This project uses the Simple Line Icons font for control icons:
+- [simplelineicons/simplelineicons.github.io](https://github.com/simplelineicons/simplelineicons.github.io)

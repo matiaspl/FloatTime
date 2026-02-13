@@ -222,11 +222,24 @@ class OntimeClient:
             if 'blackout' in t:
                 self.last_blackout = bool(t['blackout'])
 
-        # Message-only payload: merge blink/blackout into last_main_data so we don't reset the display
-        if not has_timer_data and self.last_main_data is not None:
-            if not raw_data.get('currentEvent') and not raw_data.get('eventNow'):
-                self.last_main_data = replace(self.last_main_data, blink=self.last_blink, blackout=self.last_blackout)
-                return self._get_display_data()
+        # Message-only payload: merge blink/blackout into cached display data so we don't reset timer values.
+        if not has_timer_data and not raw_data.get('currentEvent') and not raw_data.get('eventNow'):
+            if self.last_main_data is not None:
+                self.last_main_data = replace(
+                    self.last_main_data,
+                    blink=self.last_blink,
+                    blackout=self.last_blackout,
+                )
+            for aux_id in ('1', '2', '3'):
+                aux_data = self.last_aux_data.get(aux_id)
+                if aux_data is not None:
+                    self.last_aux_data[aux_id] = replace(
+                        aux_data,
+                        blink=self.last_blink,
+                        blackout=self.last_blackout,
+                    )
+            # If selected source has no cached data yet, _get_display_data() will return a fallback TimerData.
+            return self._get_display_data()
 
         # Extract thresholds, update cache if present, or use cached values
         time_warning = current_event.get('timeWarning') or timer_dict.get('timeWarning')
