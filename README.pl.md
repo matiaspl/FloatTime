@@ -4,6 +4,8 @@
 
 Lekka aplikacja desktopowa wyświetlająca timer w trybie always-on-top. Może działać z serwerem Ontime albo lokalnie w trybie **Simple timer** (bez serwera).
 
+![Timer z nakładkami sterowania](images/overlay-conrtrols.png)
+
 ## Konfiguracja
 
 Aplikacja przechowuje konfigurację w pliku JSON w katalogu użytkownika:
@@ -124,7 +126,12 @@ Możesz zmienić konfigurację przez:
 
 ### Dostępne opcje
 
+![Menu kontekstowe](images/popup.png)
+
 - **Configure...** - Zmiana URL serwera Ontime oraz ustawień Simple timera
+
+  ![Dialog konfiguracji](images/config.png)
+
 - **Show/Hide** - Pokazuj/ukryj okno
 - **Always on Top** - Przełącz tryb always-on-top
 - **Show Background** - Przełącz widoczność tła (przezroczyste/nieprzezroczyste)

@@ -4,6 +4,8 @@ Lightweight desktop app that shows an always-on-top timer overlay. It can work w
 
 **Polish documentation:** [README.pl.md](README.pl.md)
 
+![Timer with hover controls](images/overlay-conrtrols.png)
+
 ## Configuration
 
 The app stores configuration in a JSON file in the user directory:
@@ -123,7 +125,12 @@ On first run in Ontime mode, you’ll be asked for the Ontime server URL (e.g. `
 
 ### Menu options
 
+![Context menu](images/popup.png)
+
 - **Configure...** – Set Ontime server URL and Simple timer settings
+
+  ![Configuration dialog](images/config.png)
+
 - **Show / Hide** – Show or hide the window
 - **Always on Top** – Toggle always-on-top
 - **Show Background** – Toggle background (transparent/solid)
