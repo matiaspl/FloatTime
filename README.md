@@ -269,6 +269,6 @@ GNU GPL — see [LICENSE.md](LICENSE.md).
 
 ## Third-party font note
 
-This project uses the Simple Line Icons font for control icons ond Iosevka for number display
+This project uses the Simple Line Icons font for control icons ond Iosevka for number display:
 - [simplelineicons/simplelineicons.github.io](https://github.com/simplelineicons/simplelineicons.github.io)
-- [be5invis/Iosevka](https://github.com/be5invis/Iosevka)]
+- [be5invis/Iosevka](https://github.com/be5invis/Iosevka)
