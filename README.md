@@ -26,7 +26,6 @@ Configuration options:
 - `window_position` – Window position: `[x, y]` (restored on start; reset to default if outside available screen area)
 - `locked` – Window lock state (true/false)
 - `addtime_affects_event_duration` – When true, +/- 1 min changes the current event's duration only (no addtime); when false, +/- 1 min adds/removes time from the running timer (true/false)
-- `headless_enabled` – Start in local Simple timer mode on launch (true/false)
 - `headless_preset_minutes` – Three Simple timer presets in minutes (e.g. `[15, 20, 30]`)
 - `headless_time_warning_sec` – Warning threshold for Simple timer in seconds (default `120`)
 - `headless_time_danger_sec` – Danger threshold for Simple timer in seconds (default `0`)

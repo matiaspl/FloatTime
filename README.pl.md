@@ -26,7 +26,6 @@ Plik konfiguracyjny zawiera następujące ustawienia:
 - `window_position` - Pozycja okna: `[x, y]` (przywracana przy starcie; reset do domyślnej, jeśli poza dostępnym obszarem ekranu)
 - `locked` - Stan zablokowania okna (true/false)
 - `addtime_affects_event_duration` - Gdy true, +/- 1 min zmienia tylko czas trwania bieżącego wydarzenia (bez addtime); gdy false, +/- 1 min dodaje/odejmuje czas od działającego timera (true/false)
-- `headless_enabled` - Start aplikacji w lokalnym trybie Simple timer (true/false)
 - `headless_preset_minutes` - Trzy wartości startowe Simple timera w minutach (np. `[15, 20, 30]`)
 - `headless_time_warning_sec` - Próg ostrzegawczy Simple timera w sekundach (domyślnie `120`)
 - `headless_time_danger_sec` - Próg niebezpieczeństwa Simple timera w sekundach (domyślnie `0`)

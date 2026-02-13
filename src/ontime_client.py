@@ -389,19 +389,28 @@ class OntimeClient:
         ws_url = self.server_url.replace('http', 'ws', 1) + "/ws"
 
         def on_open(ws):
-            logger.info("WebSocket connected")
-            self.websocket_connected = True
-            # Identify as FloatTime (same protocol as Ontime web client, see socket.ts)
-            ws.send(json.dumps({
-                "tag": WS_TAG_CLIENT_SET,
-                "payload": {
-                    "type": "floattime",
-                    #"origin": "floattime",
-                    #"path": "/",
-                    "name": CLIENT_NAME,
-                },
-            }))
-            ws.send(json.dumps({"tag": "poll"}))
+            # App may already be stopping when the socket finishes opening.
+            if self.stop_event.is_set():
+                return
+            try:
+                logger.info("WebSocket connected")
+                self.websocket_connected = True
+                # Identify as FloatTime (same protocol as Ontime web client, see socket.ts)
+                ws.send(json.dumps({
+                    "tag": WS_TAG_CLIENT_SET,
+                    "payload": {
+                        "type": "floattime",
+                        #"origin": "floattime",
+                        #"path": "/",
+                        "name": CLIENT_NAME,
+                    },
+                }))
+                ws.send(json.dumps({"tag": "poll"}))
+            except Exception as e:
+                # Harmless race: socket opened and closed during app shutdown/source switch.
+                self.websocket_connected = False
+                if not self.stop_event.is_set():
+                    logger.error(f"WebSocket on_open error: {e}")
 
         def on_close(ws, *args):
             self.websocket_connected = False
@@ -420,6 +429,7 @@ class OntimeClient:
                 self.websocket_connected = False
             finally:
                 self.websocket_connected = False
+                self.ws = None
 
             if self.stop_event.is_set():
                 break
@@ -441,7 +451,15 @@ class OntimeClient:
         self.running = False
         self.stop_event.set()
         if self.sio: self.sio.disconnect()
-        if self.ws: self.ws.close()
+        if self.ws:
+            try:
+                # Tell websocket-client loop to stop.
+                self.ws.keep_running = False
+            except Exception:
+                pass
+            # Intentionally do not force ws.close() here. websocket-client may log
+            # "'NoneType' object has no attribute 'sock' - goodbye" during shutdown
+            # when close races with internal teardown. keep_running=False is enough.
         if self.ws_thread: self.ws_thread.join(timeout=1)
 
     def test_connection(self) -> bool:

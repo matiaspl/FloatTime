@@ -730,7 +730,6 @@ class FloatTimeWindow(QMainWindow):
         if source == 'simple':
             self._enable_simple_timer()
             self.config.set_selected_timer_source('simple')
-            self.config.set_headless_enabled(True)
             self.update_menu_states()
             return
         if source == 'clock':
@@ -738,7 +737,6 @@ class FloatTimeWindow(QMainWindow):
             self.timer_widget.set_display_mode('clock')
             self.config.set_display_mode('clock')
             self.config.set_selected_timer_source('clock')
-            self.config.set_headless_enabled(False)
             self._hide_controls_overlays()
             self.update_menu_states()
             return
@@ -746,7 +744,6 @@ class FloatTimeWindow(QMainWindow):
             return
         self._disable_simple_timer()
         self.config.set_selected_timer_source(source)
-        self.config.set_headless_enabled(False)
         if not self.client:
             url = self.config.get_server_url()
             if url:

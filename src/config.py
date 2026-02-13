@@ -139,17 +139,14 @@ class Config:
     def get_selected_timer_source(self) -> str:
         """Get selected source across runs: main/aux1/aux2/aux3/clock/simple.
 
-        Backward-compatible defaults:
-        - simple when headless_enabled is true
-        - otherwise clock when display_mode is clock
+        Defaults:
+        - clock when display_mode is clock
         - otherwise current timer_source (default main)
         """
         v = self.get('selected_timer_source')
         allowed = ('main', 'aux1', 'aux2', 'aux3', 'clock', 'simple')
         if isinstance(v, str) and v in allowed:
             return v
-        if self.get_headless_enabled():
-            return 'simple'
         if self.get_display_mode() == 'clock':
             return 'clock'
         return self.get_timer_source()
@@ -159,14 +156,6 @@ class Config:
         if value not in ('main', 'aux1', 'aux2', 'aux3', 'clock', 'simple'):
             return False
         return self.set('selected_timer_source', value)
-
-    def get_headless_enabled(self) -> bool:
-        """Get whether headless (no Ontime server) mode is enabled."""
-        return self.get('headless_enabled', False)
-
-    def set_headless_enabled(self, value: bool) -> bool:
-        """Save headless mode setting."""
-        return self.set('headless_enabled', bool(value))
 
     def get_headless_preset_minutes(self) -> List[int]:
         """Get the 3 preset durations in minutes for headless timer. Default [15, 20, 30]."""
