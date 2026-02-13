@@ -1,6 +1,6 @@
-# FloatTime – Ontime Overlay Timer
+# FloatTime – Ontime Overlay Timer (with Simple Timer mode)
 
-Lightweight desktop app that shows an Ontime timer in always-on-top mode. Ideal for displaying the timer over PowerPoint or other applications.
+Lightweight desktop app that shows an always-on-top timer overlay. It can work with an Ontime server or in local **Simple timer** mode (no server required).
 
 **Polish documentation:** [README.pl.md](README.pl.md)
 
@@ -26,6 +26,10 @@ Configuration options:
 - `window_position` – Window position: `[x, y]` (restored on start; reset to default if outside available screen area)
 - `locked` – Window lock state (true/false)
 - `addtime_affects_event_duration` – When true, +/- 1 min changes the current event's duration only (no addtime); when false, +/- 1 min adds/removes time from the running timer (true/false)
+- `headless_enabled` – Start in local Simple timer mode on launch (true/false)
+- `headless_preset_minutes` – Three Simple timer presets in minutes (e.g. `[15, 20, 30]`)
+- `headless_time_warning_sec` – Warning threshold for Simple timer in seconds (default `120`)
+- `headless_time_danger_sec` – Danger threshold for Simple timer in seconds (default `0`)
 
 You can edit this file manually or use the app’s context menu.
 
@@ -35,9 +39,11 @@ You can edit this file manually or use the app’s context menu.
 - **Always-on-top** – Timer stays above other windows (on macOS via native NSWindow level when PyObjC is installed)
 - **Lightweight** – Python + PyQt6 (no Electron)
 - **Cross-platform** – Windows, macOS, Linux
-- **URL configuration** – Just set the Ontime server URL
+- **Dual source modes** – Ontime server mode or local **Simple timer** mode
+- **URL configuration** – Configure Ontime URL when using Ontime mode
 - **System tray** – Runs in the background with a tray icon
 - **Client identification** – Sends a unique name (hostname + short random ID) to the Ontime server so each instance appears in the server’s client list
+- **WebSocket auto-reconnect** – Retries connection every 3 seconds after disconnect/failure
 
 ### Window interaction
 - **Dragging** – Move the window by dragging with the mouse
@@ -55,6 +61,12 @@ You can edit this file manually or use the app’s context menu.
 - **Bottom edge** – **‹ Previous**, **▶ Start**, **⏸ Pause**, **↻ Restart**, **› Next** (previous/next event, play, pause, restart, next event)
 - Both groups appear when hovering over the window
 - **Next** and **Previous** do not wrap (disabled at last/first event)
+- In **Simple timer** mode:
+  - **Previous/Next** switch between the 3 configured preset values
+  - **+/- 1** changes current time and temporary start baseline
+  - **Start** resumes (does not force reset)
+  - **Restart** resets to the selected preset's original value (ignores +/- temporary edits)
+  - **Blink/Blackout** also work locally
 
 ### Display
 - **Display modes** – Switch between Ontime timer and system clock
@@ -78,7 +90,7 @@ You can edit this file manually or use the app’s context menu.
 ## Requirements
 
 - Python 3.9+
-- Ontime server (local or remote)
+- Ontime server (local or remote) **optional** (not required in Simple timer mode)
 - **macOS:** optional `pyobjc-framework-Cocoa` for reliable always-on-top (`pip install pyobjc-framework-Cocoa`)
 
 ## Building from source
@@ -102,7 +114,7 @@ python src/main.py
 
 ### First run
 
-On first run you’ll be asked for the Ontime server URL (e.g. `http://localhost:4001`).
+On first run in Ontime mode, you’ll be asked for the Ontime server URL (e.g. `http://localhost:4001`).
 
 ### Changing settings
 
@@ -111,12 +123,12 @@ On first run you’ll be asked for the Ontime server URL (e.g. `http://localhost
 
 ### Menu options
 
-- **Configure...** – Set Ontime server URL
+- **Configure...** – Set Ontime server URL and Simple timer settings
 - **Show / Hide** – Show or hide the window
 - **Always on Top** – Toggle always-on-top
 - **Show Background** – Toggle background (transparent/solid)
 - **Lock in Place** – Lock position (disable drag and resize)
-- **Show Clock / Show Timer** – Switch between timer and system clock
+- **Timer source** – `Main`, `Aux 1`, `Aux 2`, `Aux 3`, `System clock`, `Simple timer`
 - **Reset Size** – Restore default window size
 - **+/- 1 changes event length** – When checked, +/- 1 min changes the current event's duration only (no running-timer addtime)
 - **Timer** (submenu) – Previous event, Next event, Start, Pause, Restart, +1 min, −1 min, Blink, Blackout
@@ -137,8 +149,8 @@ Output in `dist/floattime/` (onedir mode). On macOS: `dist/floattime/floattime.a
 ### Basics
 
 1. Start the app – it appears in the system tray.
-2. Set the Ontime URL if prompted.
-3. Timer updates in real time via WebSocket.
+2. Choose timer source in menu (`Timer source`).
+3. If using Ontime source, set URL if prompted and data updates in real time via WebSocket.
 4. Drag the window to move it (when not locked).
 5. Hover over a corner and drag to resize.
 6. Hover over the window to show −1/+1 at the top and Previous/Start/Pause/Restart/Next at the bottom.
@@ -151,7 +163,7 @@ Output in `dist/floattime/` (onedir mode). On macOS: `dist/floattime/floattime.a
 
 ### Display modes
 
-- **Timer** – Ontime timer (default)
+- **Timer** – Ontime timer or Simple timer
 - **Clock** – System clock
 - Toggle via tray or context menu.
 
@@ -169,6 +181,7 @@ FloatTime/
 │   ├── ontime_client.py     # Ontime API client (WebSocket)
 │   ├── timer_widget.py      # Timer display widget
 │   ├── timer_controls.py    # Control overlays (top: −1/+1, bottom: prev/play/pause/restart/next)
+│   ├── local_timer.py       # Local Simple timer (no server mode)
 │   ├── tray_manager.py      # System tray icon and menu
 │   ├── config.py            # Configuration
 │   ├── logger.py            # Logging (FLOATTIME_DEBUG)
@@ -183,7 +196,7 @@ FloatTime/
 └── README.pl.md              # Polish documentation
 ```
 
-## Ontime API
+## Ontime API (Ontime mode)
 
 The app connects to Ontime via WebSockets.
 
@@ -191,6 +204,7 @@ The app connects to Ontime via WebSockets.
 
 - **Endpoint:** `ws://<server-url>/ws` (derived from configured `server_url` by replacing `http` with `ws` and appending `/ws`).
 - **On connect:** the client sends a `client-set` message with `type` and `name` (name = hostname + short random ID) so the server can list the client, then `{"tag": "poll"}` to request initial/runtime data.
+- **Reconnect:** on disconnect/failure, client retries every 3 seconds.
 - **Incoming messages:** JSON with `tag` or `type` and `payload`; the app uses `payload` (or the whole message) as Ontime runtime data. Granular updates (`type`: `ontime-eventNow`, `ontime-timer`, etc.) are unwrapped so the payload is parsed.
 - **Control (send):**
   - `{"tag": "start"}` – start the loaded event
@@ -227,7 +241,7 @@ Then run the app; logs appear in the console.
 ## Troubleshooting
 
 **Timer not updating**
-- Check that the Ontime server is running and reachable at the configured URL.
+- If using Ontime mode, check that the Ontime server is running and reachable at the configured URL.
 - Enable `FLOATTIME_DEBUG=true` and check logs.
 - Ensure the port isn’t blocked by a firewall.
 

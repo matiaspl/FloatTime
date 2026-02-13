@@ -1,5 +1,11 @@
 # Plan: Reuse one menu for tray and pop-up (pop-up as source)
 
+## Status
+
+- Implemented.
+- This planning document is retained for reference.
+- For the final post-implementation state since `v0.3.0`, see `docs/RELEASE_NOTES_SINCE_v0.3.0.md`.
+
 ## Goal
 Single source of truth for the application menu. Use the current **pop-up (context) menu** logic in `main.py` as the source; tray menu will use the same builder.
 

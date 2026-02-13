@@ -2,7 +2,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -135,3 +135,120 @@ class Config:
         if value not in ('main', 'aux1', 'aux2', 'aux3'):
             return False
         return self.set('timer_source', value)
+
+    def get_selected_timer_source(self) -> str:
+        """Get selected source across runs: main/aux1/aux2/aux3/clock/simple.
+
+        Backward-compatible defaults:
+        - simple when headless_enabled is true
+        - otherwise clock when display_mode is clock
+        - otherwise current timer_source (default main)
+        """
+        v = self.get('selected_timer_source')
+        allowed = ('main', 'aux1', 'aux2', 'aux3', 'clock', 'simple')
+        if isinstance(v, str) and v in allowed:
+            return v
+        if self.get_headless_enabled():
+            return 'simple'
+        if self.get_display_mode() == 'clock':
+            return 'clock'
+        return self.get_timer_source()
+
+    def set_selected_timer_source(self, value: str) -> bool:
+        """Persist selected source across runs."""
+        if value not in ('main', 'aux1', 'aux2', 'aux3', 'clock', 'simple'):
+            return False
+        return self.set('selected_timer_source', value)
+
+    def get_headless_enabled(self) -> bool:
+        """Get whether headless (no Ontime server) mode is enabled."""
+        return self.get('headless_enabled', False)
+
+    def set_headless_enabled(self, value: bool) -> bool:
+        """Save headless mode setting."""
+        return self.set('headless_enabled', bool(value))
+
+    def get_headless_preset_minutes(self) -> List[int]:
+        """Get the 3 preset durations in minutes for headless timer. Default [15, 20, 30]."""
+        raw = self.get('headless_preset_minutes', [15, 20, 30])
+        if not isinstance(raw, list) or len(raw) != 3:
+            return [15, 20, 30]
+        out = []
+        for x in raw:
+            try:
+                v = int(x)
+                if 1 <= v <= 999:
+                    out.append(v)
+                else:
+                    return [15, 20, 30]
+            except (TypeError, ValueError):
+                return [15, 20, 30]
+        return out
+
+    def set_headless_preset_minutes(self, value: List[int]) -> bool:
+        """Save headless preset minutes. Must be exactly 3 positive integers (1-999)."""
+        if not isinstance(value, list) or len(value) != 3:
+            return False
+        out = []
+        for x in value:
+            try:
+                v = int(x)
+                if 1 <= v <= 999:
+                    out.append(v)
+                else:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        return self.set('headless_preset_minutes', out)
+
+    def get_headless_time_warning_sec(self) -> int:
+        """Get warning threshold in seconds for simple timer countdown color. Default 120 (2:00)."""
+        raw = self.get('headless_time_warning_sec')
+        if raw is None:
+            # Backward compatibility: migrate from old millisecond key if present.
+            old_ms = self.get('headless_time_warning_ms')
+            if old_ms is not None:
+                try:
+                    return max(0, int(old_ms) // 1000)
+                except (TypeError, ValueError):
+                    return 120
+            return 120
+        try:
+            v = int(raw)
+            return max(0, v)
+        except (TypeError, ValueError):
+            return 120
+
+    def set_headless_time_warning_sec(self, value: int) -> bool:
+        """Save warning threshold in seconds for simple timer countdown color."""
+        try:
+            v = int(value)
+        except (TypeError, ValueError):
+            return False
+        return self.set('headless_time_warning_sec', max(0, v))
+
+    def get_headless_time_danger_sec(self) -> int:
+        """Get danger threshold in seconds for simple timer countdown color. Default 0."""
+        raw = self.get('headless_time_danger_sec')
+        if raw is None:
+            # Backward compatibility: migrate from old millisecond key if present.
+            old_ms = self.get('headless_time_danger_ms')
+            if old_ms is not None:
+                try:
+                    return max(0, int(old_ms) // 1000)
+                except (TypeError, ValueError):
+                    return 0
+            return 0
+        try:
+            v = int(raw)
+            return max(0, v)
+        except (TypeError, ValueError):
+            return 0
+
+    def set_headless_time_danger_sec(self, value: int) -> bool:
+        """Save danger threshold in seconds for simple timer countdown color."""
+        try:
+            v = int(value)
+        except (TypeError, ValueError):
+            return False
+        return self.set('headless_time_danger_sec', max(0, v))

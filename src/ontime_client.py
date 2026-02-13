@@ -385,7 +385,7 @@ class OntimeClient:
             logger.error(f"WS message error: {e}")
 
     def _ws_loop(self):
-        """Standard WebSocket loop."""
+        """Standard WebSocket loop with auto-reconnect."""
         ws_url = self.server_url.replace('http', 'ws', 1) + "/ws"
 
         def on_open(ws):
@@ -406,16 +406,27 @@ class OntimeClient:
         def on_close(ws, *args):
             self.websocket_connected = False
 
-        try:
-            self.ws = websocket.WebSocketApp(
-                ws_url,
-                on_message=self._ws_on_message,
-                on_open=on_open,
-                on_close=on_close
-            )
-            self.ws.run_forever()
-        except Exception as e:
-            logger.error(f"WebSocket loop error: {e}")
+        while not self.stop_event.is_set():
+            try:
+                self.ws = websocket.WebSocketApp(
+                    ws_url,
+                    on_message=self._ws_on_message,
+                    on_open=on_open,
+                    on_close=on_close
+                )
+                self.ws.run_forever()
+            except Exception as e:
+                logger.error(f"WebSocket loop error: {e}")
+                self.websocket_connected = False
+            finally:
+                self.websocket_connected = False
+
+            if self.stop_event.is_set():
+                break
+
+            # Auto-reconnect every 3 seconds when connection fails/drops.
+            logger.warning("WebSocket disconnected; reconnecting in 3 seconds...")
+            self.stop_event.wait(3)
 
     def start(self):
         if self.running: return

@@ -1,8 +1,8 @@
-# FloatTime - Ontime Overlay Timer
+# FloatTime - Ontime Overlay Timer (z trybem Simple Timer)
 
 **English documentation:** [README.md](README.md)
 
-Lekka aplikacja desktopowa wyświetlająca timer z Ontime w trybie always-on-top. Idealna do wyświetlania timera podczas prezentacji PowerPoint lub innych aplikacji.
+Lekka aplikacja desktopowa wyświetlająca timer w trybie always-on-top. Może działać z serwerem Ontime albo lokalnie w trybie **Simple timer** (bez serwera).
 
 ## Konfiguracja
 
@@ -26,6 +26,10 @@ Plik konfiguracyjny zawiera następujące ustawienia:
 - `window_position` - Pozycja okna: `[x, y]` (przywracana przy starcie; reset do domyślnej, jeśli poza dostępnym obszarem ekranu)
 - `locked` - Stan zablokowania okna (true/false)
 - `addtime_affects_event_duration` - Gdy true, +/- 1 min zmienia tylko czas trwania bieżącego wydarzenia (bez addtime); gdy false, +/- 1 min dodaje/odejmuje czas od działającego timera (true/false)
+- `headless_enabled` - Start aplikacji w lokalnym trybie Simple timer (true/false)
+- `headless_preset_minutes` - Trzy wartości startowe Simple timera w minutach (np. `[15, 20, 30]`)
+- `headless_time_warning_sec` - Próg ostrzegawczy Simple timera w sekundach (domyślnie `120`)
+- `headless_time_danger_sec` - Próg niebezpieczeństwa Simple timera w sekundach (domyślnie `0`)
 
 Możesz edytować ten plik ręcznie lub użyć menu kontekstowego aplikacji.
 
@@ -35,9 +39,11 @@ Możesz edytować ten plik ręcznie lub użyć menu kontekstowego aplikacji.
 - **Always-on-top** - Timer zawsze pozostaje na wierzchu innych okien (na macOS przez natywny poziom okna NSWindow)
 - **Lekka** - Zbudowana w Python + PyQt6 (bez Electrona)
 - **Cross-platform** - Działa na Windows, macOS i Linux
-- **Konfiguracja URL** - Wystarczy podać adres serwera Ontime
+- **Dwa źródła timera** - tryb Ontime lub lokalny **Simple timer**
+- **Konfiguracja URL** - URL serwera wymagany tylko w trybie Ontime
 - **System tray** - Działa w tle z ikoną w zasobniku systemowym
 - **Identyfikacja klienta** - Aplikacja wysyła unikalną nazwę (hostname + krótki losowy ID) do serwera Ontime, dzięki czemu każda instancja pojawia się na liście klientów serwera
+- **Auto-reconnect WebSocket** - Po zerwaniu połączenia ponawia łączenie co 3 sekundy
 
 ### Interakcja z oknem
 - **Przeciąganie** - Można przesuwać okno myszką
@@ -55,6 +61,12 @@ Możesz edytować ten plik ręcznie lub użyć menu kontekstowego aplikacji.
 - **Dolna krawędź** - **‹ Poprzednie**, **▶ Start**, **⏸ Pause**, **↻ Restart**, **› Następne** (poprzednie/następne wydarzenie, start, pauza, restart, następne)
 - Obie grupy pojawiają się po najechaniu myszką na okno
 - **Następne** i **Poprzednie** nie zawijają (wyłączone przy ostatnim/pierwszym wydarzeniu)
+- W trybie **Simple timer**:
+  - **Poprzednie/Następne** przełączają między 3 skonfigurowanymi presetami
+  - **+/- 1** zmienia bieżący czas i tymczasową wartość startową
+  - **Start** wznawia (nie wymusza resetu)
+  - **Restart** resetuje do oryginalnej wartości wybranego presetu (ignoruje tymczasowe +/-)
+  - **Blink/Blackout** działają także lokalnie
 
 ### Wyświetlanie
 - **Tryby wyświetlania** - Przełączanie między timerem Ontime a zegarem systemowym
@@ -78,7 +90,7 @@ Możesz edytować ten plik ręcznie lub użyć menu kontekstowego aplikacji.
 ## Wymagania
 
 - Python 3.9 lub nowszy
-- Serwer Ontime działający lokalnie lub zdalnie
+- Serwer Ontime działający lokalnie lub zdalnie (**opcjonalnie**, niepotrzebny w trybie Simple timer)
 - **macOS:** opcjonalnie `pyobjc-framework-Cocoa` dla poprawnego always-on-top (zainstaluj: `pip install pyobjc-framework-Cocoa`)
 
 ## Instalacja
@@ -102,7 +114,7 @@ python src/main.py
 
 ### Pierwsze uruchomienie
 
-Przy pierwszym uruchomieniu aplikacja poprosi o podanie URL serwera Ontime (np. `http://localhost:4001`).
+Przy pierwszym uruchomieniu w trybie Ontime aplikacja poprosi o podanie URL serwera Ontime (np. `http://localhost:4001`).
 
 ### Zmiana konfiguracji
 
@@ -112,12 +124,12 @@ Możesz zmienić konfigurację przez:
 
 ### Dostępne opcje
 
-- **Configure...** - Zmiana URL serwera Ontime
+- **Configure...** - Zmiana URL serwera Ontime oraz ustawień Simple timera
 - **Show/Hide** - Pokazuj/ukryj okno
 - **Always on Top** - Przełącz tryb always-on-top
 - **Show Background** - Przełącz widoczność tła (przezroczyste/nieprzezroczyste)
 - **Lock in Place** - Zablokuj pozycję (wyłącz przeciąganie i zmianę rozmiaru)
-- **Show Clock / Show Timer** - Przełącz między timerem a zegarem systemowym
+- **Timer source** - `Main`, `Aux 1`, `Aux 2`, `Aux 3`, `System clock`, `Simple timer`
 - **Reset Size** - Przywróć domyślny rozmiar okna
 - **+/- 1 also change event length** - Gdy zaznaczone, +/- 1 min zmienia tylko czas trwania bieżącego wydarzenia (bez addtime)
 - **Timer** (podmenu) - Poprzednie wydarzenie, Następne wydarzenie, Start, Pause, Restart, +1 min, −1 min, Blink, Blackout
@@ -138,8 +150,8 @@ Wynik w katalogu `dist/floattime/` (tryb `--onedir`). Na macOS: `dist/floattime/
 ### Podstawowe operacje
 
 1. **Uruchom aplikację** - Aplikacja pojawi się w system tray
-2. **Skonfiguruj URL** - Jeśli jeszcze nie skonfigurowano, podaj adres serwera Ontime
-3. **Timer automatycznie się aktualizuje** - Dane są pobierane przez WebSocket w czasie rzeczywistym
+2. **Wybierz źródło timera** - `Timer source` w menu
+3. **Dla trybu Ontime** skonfiguruj URL (jeśli potrzebne), a dane będą pobierane przez WebSocket w czasie rzeczywistym
 4. **Przesuwaj okno** - Kliknij i przeciągnij okno (gdy nie zablokowane), aby je przesunąć
 5. **Zmień rozmiar** - Najedź na róg okna (kursor się zmieni) i przeciągnij, aby zmienić rozmiar
 6. **Sterowanie timerem** - Najedź na okno; u góry pojawią się −1/+1, na dole Poprzednie/Start/Pause/Restart/Następne
@@ -153,7 +165,7 @@ Wynik w katalogu `dist/floattime/` (tryb `--onedir`). Na macOS: `dist/floattime/
 
 ### Przełączanie trybów
 
-- **Timer** - Wyświetla timer z Ontime (domyślnie)
+- **Timer** - Wyświetla timer z Ontime lub Simple timer
 - **Clock** - Wyświetla zegar systemowy
 - Przełączanie przez menu system tray lub menu kontekstowe
 
@@ -179,6 +191,7 @@ FloatTime/
 │   ├── ontime_client.py     # Klient API Ontime (WebSocket)
 │   ├── timer_widget.py      # Widget wyświetlający timer
 │   ├── timer_controls.py    # Nakładki sterowania (góra: −1/+1, dół: prev/play/pause/restart/next)
+│   ├── local_timer.py       # Lokalny Simple timer (tryb bez serwera)
 │   ├── tray_manager.py      # Ikona i menu w zasobniku systemowym
 │   ├── config.py            # Zarządzanie konfiguracją
 │   ├── logger.py            # Logowanie (FLOATTIME_DEBUG)
@@ -193,7 +206,7 @@ FloatTime/
 └── README.pl.md             # Dokumentacja (polski)
 ```
 
-## API Ontime
+## API Ontime (tryb Ontime)
 
 Aplikacja łączy się z serwerem Ontime WebSocketów.
 
@@ -201,6 +214,7 @@ Aplikacja łączy się z serwerem Ontime WebSocketów.
 
 - **Endpoint:** `ws://<adres-serwera>/ws` (z skonfigurowanego `server_url`: zamiana `http` na `ws` + `/ws`).
 - **Po połączeniu:** klient wysyła wiadomość `client-set` z polami `type` i `name` (name = hostname + krótki losowy ID), żeby serwer mógł wyświetlić klienta na liście, a następnie `{"tag": "poll"}` w celu pobrania danych startowych/runtime.
+- **Reconnect:** po rozłączeniu/błędzie klient ponawia połączenie co 3 sekundy.
 - **Wiadomości przychodzące:** JSON z polami `tag` lub `type` i `payload`; aplikacja traktuje `payload` (lub całą wiadomość) jako dane Ontime. Aktualizacje granularne (`type`: `ontime-eventNow`, `ontime-timer` itd.) są rozpakowywane.
 - **Sterowanie (wysyłane):**
   - `{"tag": "start"}` – start załadowanego wydarzenia
@@ -237,7 +251,7 @@ Następnie uruchom aplikację. Logi pojawią się w konsoli.
 ## Rozwiązywanie problemów
 
 ### Timer nie aktualizuje się
-- Sprawdź, czy serwer Ontime działa i jest dostępny pod podanym adresem
+- Jeśli używasz trybu Ontime, sprawdź, czy serwer Ontime działa i jest dostępny pod podanym adresem
 - Sprawdź logi aplikacji (ustaw `FLOATTIME_DEBUG=true`)
 - Upewnij się, że port nie jest zablokowany przez firewall
 
