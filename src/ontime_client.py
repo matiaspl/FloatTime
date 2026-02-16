@@ -54,6 +54,8 @@ class TimerData:
     duration: Optional[float] = None
     blink: bool = False
     blackout: bool = False
+    message_text: str = ""  # When message_visible, this text replaces the timer (Ontime external message)
+    message_visible: bool = False
     timer_source: str = 'main'  # 'main' | 'aux1' | 'aux2' | 'aux3'
     timer_dict: Dict[str, Any] = field(default_factory=dict)
     raw_data: Dict[str, Any] = field(default_factory=dict)
@@ -75,6 +77,8 @@ class OntimeClient:
         self.last_current_event_duration: Optional[float] = None
         self.last_blink: bool = False
         self.last_blackout: bool = False
+        self.last_message_text: str = ""
+        self.last_message_visible: bool = False
         # Cache thresholds so they persist across runtime updates that don't include event details
         self.cached_time_warning: Optional[float] = None
         self.cached_time_danger: Optional[float] = None
@@ -206,7 +210,7 @@ class OntimeClient:
             if dur is not None:
                 self.last_current_event_duration = float(dur)
 
-        # Message/timer display state (blink, blackout) - from message.timer or top-level timer message
+        # Message/timer display state (blink, blackout, timer message text) - from message.timer or top-level timer message
         msg_block = raw_data.get('message') if isinstance(raw_data.get('message'), dict) else None
         timer_msg = (msg_block.get('timer') or raw_data.get('timer')) if isinstance(msg_block, dict) else raw_data.get('timer')
         if isinstance(timer_msg, dict):
@@ -214,6 +218,10 @@ class OntimeClient:
                 self.last_blink = bool(timer_msg['blink'])
             if 'blackout' in timer_msg:
                 self.last_blackout = bool(timer_msg['blackout'])
+            if 'text' in timer_msg:
+                self.last_message_text = str(timer_msg['text']) if timer_msg['text'] is not None else ""
+            if 'visible' in timer_msg:
+                self.last_message_visible = bool(timer_msg['visible'])
         # Also handle payload that is message state only (tag "message" response)
         if isinstance(raw_data, dict) and 'timer' in raw_data and isinstance(raw_data.get('timer'), dict):
             t = raw_data['timer']
@@ -221,14 +229,29 @@ class OntimeClient:
                 self.last_blink = bool(t['blink'])
             if 'blackout' in t:
                 self.last_blackout = bool(t['blackout'])
+            if 'text' in t:
+                self.last_message_text = str(t['text']) if t['text'] is not None else ""
+            if 'visible' in t:
+                self.last_message_visible = bool(t['visible'])
 
-        # Message-only payload: merge blink/blackout into cached display data so we don't reset timer values.
-        if not has_timer_data and not raw_data.get('currentEvent') and not raw_data.get('eventNow'):
+        # Message-only payload: merge blink/blackout/message into cached display data so we don't reset timer values.
+        # Do not treat as message-only when we have timer state indicating idle (e.g. poll response with timer.playback idle, no event).
+        # In that case we must build main_data so last_main_data is set and the widget can update (e.g. clear message and show --:--).
+        is_message_only = (
+            not has_timer_data
+            and not raw_data.get('currentEvent')
+            and not raw_data.get('eventNow')
+            and not (timer_dict and is_idle)
+        )
+        if is_message_only:
+            message_disabled = not self.last_message_visible or not (self.last_message_text or "").strip()
             if self.last_main_data is not None:
                 self.last_main_data = replace(
                     self.last_main_data,
                     blink=self.last_blink,
                     blackout=self.last_blackout,
+                    message_text=self.last_message_text,
+                    message_visible=self.last_message_visible,
                 )
             for aux_id in ('1', '2', '3'):
                 aux_data = self.last_aux_data.get(aux_id)
@@ -237,9 +260,22 @@ class OntimeClient:
                         aux_data,
                         blink=self.last_blink,
                         blackout=self.last_blackout,
+                        message_text=self.last_message_text,
+                        message_visible=self.last_message_visible,
                     )
-            # If selected source has no cached data yet, _get_display_data() will return a fallback TimerData.
-            return self._get_display_data()
+            # When main is selected and we have no main data yet: inject message if enabled so widget can show it.
+            # If message is disabled and we have no main data, request full state so we show what Ontime shows (no forced --:--).
+            if message_disabled and self._timer_source == 'main' and self.last_main_data is None:
+                self._send_ws({"tag": "poll"})
+            result = self._get_display_data()
+            if result is not None and self._timer_source == 'main' and self.last_main_data is None:
+                if self.last_message_visible or (self.last_message_text or "").strip():
+                    result = replace(
+                        result,
+                        message_text=self.last_message_text,
+                        message_visible=self.last_message_visible,
+                    )
+            return result
 
         # Extract thresholds, update cache if present, or use cached values
         time_warning = current_event.get('timeWarning') or timer_dict.get('timeWarning')
@@ -260,6 +296,12 @@ class OntimeClient:
         elif self.cached_duration is not None:
             duration = self.cached_duration
 
+        # When main timer is idle (stopped), don't show timer message so the widget shows --:--
+        msg_text = self.last_message_text
+        msg_visible = self.last_message_visible
+        if timer_type == 'none':
+            msg_text = ""
+            msg_visible = False
         main_data = TimerData(
             timer_ms=timer_ms,
             timer_type=timer_type,
@@ -274,6 +316,8 @@ class OntimeClient:
             duration=duration,
             blink=self.last_blink,
             blackout=self.last_blackout,
+            message_text=msg_text,
+            message_visible=msg_visible,
             timer_source='main',
             timer_dict=timer_dict,
             raw_data=raw_data
@@ -306,6 +350,8 @@ class OntimeClient:
             duration=duration,
             blink=self.last_blink,
             blackout=self.last_blackout,
+            message_text=self.last_message_text,
+            message_visible=self.last_message_visible,
             timer_source=f'aux{aux_id}',
             timer_dict=aux,
             raw_data=aux

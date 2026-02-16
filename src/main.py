@@ -203,6 +203,7 @@ class FloatTimeWindow(QMainWindow):
         # Load settings
         self.timer_widget.set_display_mode(self.config.get_display_mode())
         self.timer_widget.set_background_visible(self.config.get_background_visible())
+        self._apply_color_settings()
         
         # Delayed connection
         QTimer.singleShot(100, self.load_configuration)
@@ -663,29 +664,51 @@ class FloatTimeWindow(QMainWindow):
         self.update_menu_states()
         self.timer_widget.update_timer(data)
 
+    def _apply_color_settings(self):
+        """Apply color and overlay bar settings from config to timer widget and control overlays."""
+        self.timer_widget.apply_color_settings(self.config)
+        rgba = self.config.get_color_overlay_bar()
+        self.top_overlay.set_overlay_bar_style(rgba)
+        self.bottom_overlay.set_overlay_bar_style(rgba)
+
     def show_config_dialog(self):
         from ui.config_dialog import ConfigDialog
         curr_url = self.config.get_server_url() or self.config.get_default_url()
         dialog = ConfigDialog(
-            current_url=curr_url,
+            current_url=curr_url or "",
             simple_presets=self.config.get_headless_preset_minutes(),
             simple_warning_sec=self.config.get_headless_time_warning_sec(),
             simple_danger_sec=self.config.get_headless_time_danger_sec(),
+            color_timer_label=self.config.get_color_timer_label(),
+            color_clock_label=self.config.get_color_clock_label(),
+            color_warning=self.config.get_color_warning(),
+            color_danger=self.config.get_color_danger(),
+            color_timer_background=self.config.get_color_timer_background(),
+            color_overlay_bar=self.config.get_color_overlay_bar(),
             parent=self,
         )
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.config.set_headless_preset_minutes(dialog.result_simple_presets)
             self.config.set_headless_time_warning_sec(dialog.result_simple_warning_sec)
             self.config.set_headless_time_danger_sec(dialog.result_simple_danger_sec)
+            self.config.set_color_timer_label(dialog.result_color_timer_label)
+            self.config.set_color_clock_label(dialog.result_color_clock_label)
+            self.config.set_color_warning(dialog.result_color_warning)
+            self.config.set_color_danger(dialog.result_color_danger)
+            self.config.set_color_timer_background(dialog.result_color_timer_background)
+            self.config.set_color_overlay_bar(dialog.result_color_overlay_bar)
+            self._apply_color_settings()
 
             if self.local_timer:
-                # Apply updated simple-timer settings immediately if active
                 self._enable_simple_timer()
 
-            if dialog.result_url:
-                self.config.set_server_url(dialog.result_url)
-                if not self.local_timer:
-                    self.start_client(dialog.result_url)
+            url_to_save = dialog.result_url if dialog.result_url else ""
+            self.config.set_server_url(url_to_save)
+            if url_to_save and not self.local_timer:
+                self.start_client(url_to_save)
+            elif not url_to_save and self.client:
+                self.client.stop()
+                self.client = None
 
     def toggle_display_mode(self):
         new_mode = 'clock' if self.timer_widget.display_mode == 'timer' else 'timer'

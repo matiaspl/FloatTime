@@ -34,6 +34,13 @@ class TimerWidget(QWidget):
         self._blink_timer.timeout.connect(self._blink_tick)
         self._blink_visible = True
         self._display_font_family = self._load_display_font()
+        # Configurable colors (defaults; main calls apply_color_settings(config) after load)
+        self._color_timer_label = "#ffffff"
+        self._color_clock_label = "#ffff00"
+        self._color_warning = "#FFA528"
+        self._color_danger = "#FA5656"
+        self._color_idle = "#888888"
+        self._bg_rgba = [0, 0, 0, 200]
         self.setup_ui()
         self.setup_clock_timer()
     
@@ -67,12 +74,12 @@ class TimerWidget(QWidget):
         # Timer label (for Ontime timer)
         self.timer_label = QLabel("--:--")
         self.timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.timer_label.setStyleSheet("color: #ffffff;")
+        self.timer_label.setStyleSheet(f"color: {self._color_timer_label};")
         
         # Clock label (for system clock)
         self.clock_label = QLabel("")
         self.clock_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.clock_label.setStyleSheet("color: #ffff00;")
+        self.clock_label.setStyleSheet(f"color: {self._color_clock_label};")
         
         layout.addWidget(self.timer_label)
         layout.addWidget(self.clock_label)
@@ -94,9 +101,10 @@ class TimerWidget(QWidget):
             self.update_background()
     
     def update_background(self):
-        """Update background style based on visibility."""
-        if self.background_visible:
-            self.setStyleSheet("background-color: rgba(0, 0, 0, 200); border-radius: 10px;")
+        """Update background style based on visibility and configured RGBA."""
+        if self.background_visible and len(self._bg_rgba) == 4:
+            r, g, b, a = self._bg_rgba
+            self.setStyleSheet(f"background-color: rgba({r}, {g}, {b}, {a}); border-radius: 10px;")
         else:
             self.setStyleSheet("background-color: transparent;")
     
@@ -165,13 +173,18 @@ class TimerWidget(QWidget):
 
         old_text = self.timer_label.text()
         
-        if data.timer_type == 'none':
+        # Timer message (Ontime external message): when enabled, text replaces the timer
+        if data.message_visible and (data.message_text or "").strip():
+            self.timer_label.setVisible(True)
+            self.timer_label.setText(data.message_text.strip())
+            self.timer_label.setStyleSheet(f"color: {self._color_timer_label};")
+        elif data.timer_type == 'none':
             self.timer_label.setVisible(True)
             self.timer_label.setText("--:--")
-            self.timer_label.setStyleSheet("color: #888888;")  # Dimmed when idle
+            self.timer_label.setStyleSheet(f"color: {self._color_idle};")
         elif data.timer_type == 'clock':
             self.timer_label.setVisible(True)
-            self.timer_label.setStyleSheet("color: #ffffff;")
+            self.timer_label.setStyleSheet(f"color: {self._color_timer_label};")
             self.update_clock()
         else:
             self.timer_label.setVisible(True)
@@ -179,17 +192,16 @@ class TimerWidget(QWidget):
                 formatted = self._format_time(data.timer_ms, data.timer_type)
                 self.timer_label.setText(formatted)
                 
-                # Color thresholds
-                color = "#ffffff"
+                # Color thresholds from config
+                color = self._color_timer_label
                 if data.timer_type == 'count down':
                     color = self._get_timer_color_countdown(data.timer_ms, data.time_warning, data.time_danger)
                 elif data.timer_type == 'count up':
                     color = self._get_timer_color_countup(data.timer_ms, data.duration)
-                
                 self.timer_label.setStyleSheet(f"color: {color};")
             elif data.status == 'stopped' or data.timer_type == 'none':
                 self.timer_label.setText("--:--")
-                self.timer_label.setStyleSheet("color: #ffffff;")
+                self.timer_label.setStyleSheet(f"color: {self._color_timer_label};")
 
         # Only resize if text length changed (e.g., MM:SS -> HH:MM:SS)
         new_text = self.timer_label.text()
@@ -223,7 +235,7 @@ class TimerWidget(QWidget):
             self._blink_visible = True
             self.timer_label.setVisible(True)
             if self.timer_data:
-                color = "#ffffff"
+                color = self._color_timer_label
                 if self.timer_data.timer_type == 'count down' and self.timer_data.timer_ms is not None:
                     color = self._get_timer_color_countdown(
                         self.timer_data.timer_ms,
@@ -245,14 +257,33 @@ class TimerWidget(QWidget):
         self.timer_label.setVisible(self._blink_visible)
 
     def _get_timer_color_countdown(self, ms: float, warning: Optional[float], danger: Optional[float]) -> str:
-        if ms < 0: return "#FA5656" # Red
-        if danger is not None and ms <= danger: return "#FA5656"
-        if warning is not None and ms <= warning: return "#FFA528" # Orange
-        return "#ffffff"
+        if ms < 0:
+            return self._color_danger
+        if danger is not None and ms <= danger:
+            return self._color_danger
+        if warning is not None and ms <= warning:
+            return self._color_warning
+        return self._color_timer_label
 
     def _get_timer_color_countup(self, ms: float, duration: Optional[float]) -> str:
-        if duration is not None and ms > duration: return "#FFA528"
-        return "#ffffff"
+        if duration is not None and ms > duration:
+            return self._color_warning
+        return self._color_timer_label
+
+    def apply_color_settings(self, config) -> None:
+        """Apply color and background settings from config (called by main on load and after config dialog OK)."""
+        self._color_timer_label = config.get_color_timer_label()
+        self._color_clock_label = config.get_color_clock_label()
+        self._color_warning = config.get_color_warning()
+        self._color_danger = config.get_color_danger()
+        self._bg_rgba = config.get_color_timer_background()
+        self.update_background()
+        self.timer_label.setStyleSheet(f"color: {self._color_timer_label};")
+        self.clock_label.setStyleSheet(f"color: {self._color_clock_label};")
+        if self.timer_data:
+            self.update_timer(self.timer_data)
+        elif self.display_mode == 'clock':
+            self.clock_label.setStyleSheet(f"color: {self._color_clock_label};")
 
     def update_font_sizes(self, width: int = None, height: int = None):
         """Dynamically scale fonts to fill the window - text adapts to window size."""

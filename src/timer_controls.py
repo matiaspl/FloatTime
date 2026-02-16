@@ -26,7 +26,12 @@ _BTN_STYLE = """
     }
 """
 
-_OVERLAY_STYLE = "background-color: rgba(0, 0, 0, 180); border-radius: 8px;"
+def _overlay_bar_style_from_rgba(rgba: list) -> str:
+    """Build overlay bar stylesheet from [r,g,b,a]. Default [0,0,0,180]."""
+    if not isinstance(rgba, list) or len(rgba) != 4:
+        return "background-color: rgba(0, 0, 0, 180); border-radius: 8px;"
+    r, g, b, a = (int(x) & 255 for x in rgba)
+    return f"background-color: rgba({r}, {g}, {b}, {a}); border-radius: 8px;"
 
 
 def _load_control_icon_font() -> str:
@@ -95,9 +100,13 @@ class TopControlOverlay(QWidget):
         layout.addWidget(remove_btn)
         layout.addWidget(add_btn)
 
-        self.setStyleSheet(_OVERLAY_STYLE)
+        self.setStyleSheet(_overlay_bar_style_from_rgba([0, 0, 0, 180]))
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.adjustSize()
+
+    def set_overlay_bar_style(self, rgba: list) -> None:
+        """Apply overlay bar background from config [r,g,b,a]."""
+        self.setStyleSheet(_overlay_bar_style_from_rgba(rgba))
 
 
 class BottomControlOverlay(QWidget):
@@ -190,6 +199,10 @@ class BottomControlOverlay(QWidget):
         layout.addWidget(self.stop_btn)
         layout.addWidget(self.next_btn)
 
-        self.setStyleSheet(_OVERLAY_STYLE)
+        self.setStyleSheet(_overlay_bar_style_from_rgba([0, 0, 0, 180]))
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.adjustSize()
+
+    def set_overlay_bar_style(self, rgba: list) -> None:
+        """Apply overlay bar background from config [r,g,b,a]."""
+        self.setStyleSheet(_overlay_bar_style_from_rgba(rgba))

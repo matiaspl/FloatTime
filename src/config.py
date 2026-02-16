@@ -7,6 +7,19 @@ from logger import get_logger
 
 logger = get_logger(__name__)
 
+# Factory defaults for reset-to-default. Colors: hex (#RRGGBB) for labels/thresholds, [r,g,b,a] for backgrounds.
+FACTORY_DEFAULT_URL = ""
+FACTORY_DEFAULT_HEADLESS_PRESETS: List[int] = [15, 20, 30]
+FACTORY_DEFAULT_HEADLESS_WARNING_SEC = 120
+FACTORY_DEFAULT_HEADLESS_DANGER_SEC = 0
+FACTORY_DEFAULT_COLOR_TIMER_LABEL = "#ffffff"
+FACTORY_DEFAULT_COLOR_CLOCK_LABEL = "#ffff00"
+FACTORY_DEFAULT_COLOR_WARNING = "#FFA528"
+FACTORY_DEFAULT_COLOR_DANGER = "#FA5656"
+FACTORY_DEFAULT_COLOR_TIMER_BACKGROUND: List[int] = [0, 0, 0, 200]
+FACTORY_DEFAULT_COLOR_OVERLAY_BAR: List[int] = [0, 0, 0, 180]
+
+
 class Config:
     """Manages application configuration with in-memory caching."""
     
@@ -241,3 +254,98 @@ class Config:
         except (TypeError, ValueError):
             return False
         return self.set('headless_time_danger_sec', max(0, v))
+
+    # --- Color settings (hex for solid, [r,g,b,a] for backgrounds) ---
+
+    def get_color_timer_label(self) -> str:
+        """Timer label normal color (hex). Default #ffffff."""
+        v = self.get('color_timer_label')
+        return v if isinstance(v, str) and v.startswith('#') else FACTORY_DEFAULT_COLOR_TIMER_LABEL
+
+    def set_color_timer_label(self, value: str) -> bool:
+        if not isinstance(value, str) or not value.startswith('#'):
+            return False
+        return self.set('color_timer_label', value)
+
+    def get_color_clock_label(self) -> str:
+        """Clock label color (hex). Default #ffff00."""
+        v = self.get('color_clock_label')
+        return v if isinstance(v, str) and v.startswith('#') else FACTORY_DEFAULT_COLOR_CLOCK_LABEL
+
+    def set_color_clock_label(self, value: str) -> bool:
+        if not isinstance(value, str) or not value.startswith('#'):
+            return False
+        return self.set('color_clock_label', value)
+
+    def get_color_warning(self) -> str:
+        """Warning threshold color (hex). Default #FFA528."""
+        v = self.get('color_warning')
+        return v if isinstance(v, str) and v.startswith('#') else FACTORY_DEFAULT_COLOR_WARNING
+
+    def set_color_warning(self, value: str) -> bool:
+        if not isinstance(value, str) or not value.startswith('#'):
+            return False
+        return self.set('color_warning', value)
+
+    def get_color_danger(self) -> str:
+        """Danger/overtime color (hex). Default #FA5656."""
+        v = self.get('color_danger')
+        return v if isinstance(v, str) and v.startswith('#') else FACTORY_DEFAULT_COLOR_DANGER
+
+    def set_color_danger(self, value: str) -> bool:
+        if not isinstance(value, str) or not value.startswith('#'):
+            return False
+        return self.set('color_danger', value)
+
+    def get_color_timer_background(self) -> List[int]:
+        """Timer panel background RGBA [r,g,b,a], 0-255. Default [0,0,0,200]."""
+        v = self.get('color_timer_background')
+        if isinstance(v, list) and len(v) == 4:
+            try:
+                out = [int(x) & 255 for x in v]
+                return out
+            except (TypeError, ValueError):
+                pass
+        return list(FACTORY_DEFAULT_COLOR_TIMER_BACKGROUND)
+
+    def set_color_timer_background(self, value: List[int]) -> bool:
+        if not isinstance(value, list) or len(value) != 4:
+            return False
+        try:
+            out = [int(x) & 255 for x in value]
+            return self.set('color_timer_background', out)
+        except (TypeError, ValueError):
+            return False
+
+    def get_color_overlay_bar(self) -> List[int]:
+        """Control overlay bar background RGBA [r,g,b,a]. Default [0,0,0,180]."""
+        v = self.get('color_overlay_bar')
+        if isinstance(v, list) and len(v) == 4:
+            try:
+                return [int(x) & 255 for x in v]
+            except (TypeError, ValueError):
+                pass
+        return list(FACTORY_DEFAULT_COLOR_OVERLAY_BAR)
+
+    def set_color_overlay_bar(self, value: List[int]) -> bool:
+        if not isinstance(value, list) or len(value) != 4:
+            return False
+        try:
+            out = [int(x) & 255 for x in value]
+            return self.set('color_overlay_bar', out)
+        except (TypeError, ValueError):
+            return False
+
+    def reset_to_factory_defaults(self) -> bool:
+        """Set URL, simple timer, and all color keys to factory defaults and save."""
+        self._cache['server_url'] = FACTORY_DEFAULT_URL
+        self._cache['headless_preset_minutes'] = list(FACTORY_DEFAULT_HEADLESS_PRESETS)
+        self._cache['headless_time_warning_sec'] = FACTORY_DEFAULT_HEADLESS_WARNING_SEC
+        self._cache['headless_time_danger_sec'] = FACTORY_DEFAULT_HEADLESS_DANGER_SEC
+        self._cache['color_timer_label'] = FACTORY_DEFAULT_COLOR_TIMER_LABEL
+        self._cache['color_clock_label'] = FACTORY_DEFAULT_COLOR_CLOCK_LABEL
+        self._cache['color_warning'] = FACTORY_DEFAULT_COLOR_WARNING
+        self._cache['color_danger'] = FACTORY_DEFAULT_COLOR_DANGER
+        self._cache['color_timer_background'] = list(FACTORY_DEFAULT_COLOR_TIMER_BACKGROUND)
+        self._cache['color_overlay_bar'] = list(FACTORY_DEFAULT_COLOR_OVERLAY_BAR)
+        return self._save_to_disk()
