@@ -8,7 +8,7 @@ from logger import get_logger
 logger = get_logger(__name__)
 
 # Factory defaults for reset-to-default. Colors: hex (#RRGGBB) for labels/thresholds, [r,g,b,a] for backgrounds.
-FACTORY_DEFAULT_URL = ""
+FACTORY_DEFAULT_URL = "http://localhost:4001"
 FACTORY_DEFAULT_HEADLESS_PRESETS: List[int] = [15, 20, 30]
 FACTORY_DEFAULT_HEADLESS_WARNING_SEC = 120
 FACTORY_DEFAULT_HEADLESS_DANGER_SEC = 0
