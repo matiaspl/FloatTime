@@ -90,6 +90,14 @@ class Config:
     def set_background_visible(self, visible: bool) -> bool:
         """Save background visibility setting."""
         return self.set('background_visible', bool(visible))
+
+    def get_progress_bar_visible(self) -> bool:
+        """Get progress bar visibility setting."""
+        return self.get('progress_bar_visible', True)
+
+    def set_progress_bar_visible(self, visible: bool) -> bool:
+        """Save progress bar visibility setting."""
+        return self.set('progress_bar_visible', bool(visible))
     
     def get_window_size(self) -> Optional[tuple]:
         """Get saved window size (width, height)."""

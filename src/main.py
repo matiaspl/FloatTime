@@ -11,7 +11,7 @@ if getattr(sys, 'frozen', False):
 else:
     sys.path.insert(0, str(Path(__file__).parent))
 
-from PyQt6.QtWidgets import QApplication, QMainWindow, QMenu, QDialog
+from PyQt6.QtWidgets import QApplication, QMainWindow, QMenu, QDialog, QWidget, QVBoxLayout
 from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QPointF, QPoint, QSize, QRect, QEvent
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut, QCursor, QGuiApplication
 from logger import get_logger, DEBUG_LOGGING
@@ -19,6 +19,7 @@ from logger import get_logger, DEBUG_LOGGING
 # Application modules
 from config import Config
 from timer_widget import TimerWidget
+from progress_bar_widget import ProgressBarWidget
 from timer_controls import TopControlOverlay, BottomControlOverlay
 from tray_manager import TrayIconManager
 from local_timer import LocalTimer
@@ -203,6 +204,7 @@ class FloatTimeWindow(QMainWindow):
         # Load settings
         self.timer_widget.set_display_mode(self.config.get_display_mode())
         self.timer_widget.set_background_visible(self.config.get_background_visible())
+        self.progress_bar_widget.setVisible(self.config.get_progress_bar_visible())
         self._apply_color_settings()
         
         # Delayed connection
@@ -219,7 +221,14 @@ class FloatTimeWindow(QMainWindow):
         self.setWindowTitle("FloatTime")
         
         self.timer_widget = TimerWidget()
-        self.setCentralWidget(self.timer_widget)
+        self.progress_bar_widget = ProgressBarWidget()
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.timer_widget, 1)
+        layout.addWidget(self.progress_bar_widget, 0)
+        self.setCentralWidget(container)
         
         self.setMinimumSize(150, 100)
         size = self.config.get_window_size() or (300, 150)
@@ -369,6 +378,7 @@ class FloatTimeWindow(QMainWindow):
             ("show_hide", do_show_hide),  # special: label set from visibility
             ("Always on Top", self.toggle_always_on_top, True, bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint), "always_on_top"),
             ("Show Background", self.toggle_background, True, self.timer_widget.background_visible, "background_visible"),
+            ("Show progress bar", self.toggle_progress_bar, True, self.progress_bar_widget.isVisible(), "progress_bar_visible"),
             ("Lock in Place", self.toggle_locked, True, self.is_locked, "locked"),
             ("On-hover controls", self.toggle_hover_controls, True, self.config.get_hover_controls_enabled(), "hover_controls"),
             (None, None),
@@ -554,6 +564,8 @@ class FloatTimeWindow(QMainWindow):
             refs['always_on_top'].setChecked(bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint))
         if 'background_visible' in refs:
             refs['background_visible'].setChecked(self.timer_widget.background_visible)
+        if 'progress_bar_visible' in refs:
+            refs['progress_bar_visible'].setChecked(self.progress_bar_widget.isVisible())
         if 'locked' in refs:
             refs['locked'].setChecked(self.is_locked)
         if 'hover_controls' in refs:
@@ -663,10 +675,12 @@ class FloatTimeWindow(QMainWindow):
         self.bottom_overlay.set_mode('aux' if data.timer_source != 'main' else 'main')
         self.update_menu_states()
         self.timer_widget.update_timer(data)
+        self.progress_bar_widget.update_timer(data)
 
     def _apply_color_settings(self):
-        """Apply color settings from config to timer widget."""
+        """Apply color settings from config to timer widget and progress bar."""
         self.timer_widget.apply_color_settings(self.config)
+        self.progress_bar_widget.apply_color_settings(self.config)
 
     def show_config_dialog(self):
         from ui.config_dialog import ConfigDialog
@@ -717,6 +731,12 @@ class FloatTimeWindow(QMainWindow):
         visible = not self.timer_widget.background_visible
         self.timer_widget.set_background_visible(visible)
         self.config.set_background_visible(visible)
+        self.update_menu_states()
+
+    def toggle_progress_bar(self):
+        visible = not self.progress_bar_widget.isVisible()
+        self.progress_bar_widget.setVisible(visible)
+        self.config.set_progress_bar_visible(visible)
         self.update_menu_states()
 
     def toggle_locked(self):
@@ -1012,7 +1032,9 @@ class FloatTimeWindow(QMainWindow):
         if self._pending_resize and not self._updating_fonts:
             self._updating_fonts = True
             w, h = self._pending_resize
-            self.timer_widget.update_font_sizes(w, h)
+            # Use timer widget's area for font scaling (smaller when progress bar is visible)
+            h_timer = h - (self.progress_bar_widget.height() if self.progress_bar_widget.isVisible() else 0)
+            self.timer_widget.update_font_sizes(w, h_timer)
             self._updating_fonts = False
             self._pending_resize = None
     
