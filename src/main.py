@@ -665,11 +665,8 @@ class FloatTimeWindow(QMainWindow):
         self.timer_widget.update_timer(data)
 
     def _apply_color_settings(self):
-        """Apply color and overlay bar settings from config to timer widget and control overlays."""
+        """Apply color settings from config to timer widget."""
         self.timer_widget.apply_color_settings(self.config)
-        rgba = self.config.get_color_overlay_bar()
-        self.top_overlay.set_overlay_bar_style(rgba)
-        self.bottom_overlay.set_overlay_bar_style(rgba)
 
     def show_config_dialog(self):
         from ui.config_dialog import ConfigDialog
@@ -684,7 +681,6 @@ class FloatTimeWindow(QMainWindow):
             color_warning=self.config.get_color_warning(),
             color_danger=self.config.get_color_danger(),
             color_timer_background=self.config.get_color_timer_background(),
-            color_overlay_bar=self.config.get_color_overlay_bar(),
             parent=self,
         )
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -696,7 +692,6 @@ class FloatTimeWindow(QMainWindow):
             self.config.set_color_warning(dialog.result_color_warning)
             self.config.set_color_danger(dialog.result_color_danger)
             self.config.set_color_timer_background(dialog.result_color_timer_background)
-            self.config.set_color_overlay_bar(dialog.result_color_overlay_bar)
             self._apply_color_settings()
 
             if self.local_timer:

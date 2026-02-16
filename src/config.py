@@ -17,7 +17,6 @@ FACTORY_DEFAULT_COLOR_CLOCK_LABEL = "#ffff00"
 FACTORY_DEFAULT_COLOR_WARNING = "#FFA528"
 FACTORY_DEFAULT_COLOR_DANGER = "#FA5656"
 FACTORY_DEFAULT_COLOR_TIMER_BACKGROUND: List[int] = [0, 0, 0, 200]
-FACTORY_DEFAULT_COLOR_OVERLAY_BAR: List[int] = [0, 0, 0, 180]
 
 
 class Config:
@@ -317,25 +316,6 @@ class Config:
         except (TypeError, ValueError):
             return False
 
-    def get_color_overlay_bar(self) -> List[int]:
-        """Control overlay bar background RGBA [r,g,b,a]. Default [0,0,0,180]."""
-        v = self.get('color_overlay_bar')
-        if isinstance(v, list) and len(v) == 4:
-            try:
-                return [int(x) & 255 for x in v]
-            except (TypeError, ValueError):
-                pass
-        return list(FACTORY_DEFAULT_COLOR_OVERLAY_BAR)
-
-    def set_color_overlay_bar(self, value: List[int]) -> bool:
-        if not isinstance(value, list) or len(value) != 4:
-            return False
-        try:
-            out = [int(x) & 255 for x in value]
-            return self.set('color_overlay_bar', out)
-        except (TypeError, ValueError):
-            return False
-
     def reset_to_factory_defaults(self) -> bool:
         """Set URL, simple timer, and all color keys to factory defaults and save."""
         self._cache['server_url'] = FACTORY_DEFAULT_URL
@@ -347,5 +327,4 @@ class Config:
         self._cache['color_warning'] = FACTORY_DEFAULT_COLOR_WARNING
         self._cache['color_danger'] = FACTORY_DEFAULT_COLOR_DANGER
         self._cache['color_timer_background'] = list(FACTORY_DEFAULT_COLOR_TIMER_BACKGROUND)
-        self._cache['color_overlay_bar'] = list(FACTORY_DEFAULT_COLOR_OVERLAY_BAR)
         return self._save_to_disk()

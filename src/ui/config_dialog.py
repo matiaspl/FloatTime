@@ -2,10 +2,10 @@
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QMessageBox, QSpinBox, QGroupBox, QColorDialog,
-    QGridLayout,
+    QGridLayout, QFrame,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt, QRect
+from PyQt6.QtGui import QColor, QPainter, QBrush
 
 # Avoid circular import: use factory defaults from config for Reset
 from config import (
@@ -18,7 +18,6 @@ from config import (
     FACTORY_DEFAULT_COLOR_WARNING,
     FACTORY_DEFAULT_COLOR_DANGER,
     FACTORY_DEFAULT_COLOR_TIMER_BACKGROUND,
-    FACTORY_DEFAULT_COLOR_OVERLAY_BAR,
 )
 
 
@@ -42,6 +41,22 @@ def _qcolor_to_rgba(c: QColor) -> list:
     return [c.red(), c.green(), c.blue(), c.alpha()] if c.isValid() else [0, 0, 0, 200]
 
 
+class CheckerboardFrame(QFrame):
+    """Frame that paints a checkerboard pattern so transparent colors are visible on color patches."""
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
+        size = 6  # square size in pixels
+        light = QBrush(QColor(0xff, 0xff, 0xff))
+        dark = QBrush(QColor(0xdd, 0xdd, 0xdd))
+        w, h = self.width(), self.height()
+        for y in range(0, h + size, size):
+            for x in range(0, w + size, size):
+                brush = dark if ((x // size) + (y // size)) % 2 == 0 else light
+                painter.fillRect(QRect(x, y, size, size), brush)
+
+
 class ConfigDialog(QDialog):
     """Dialog for configuring Ontime server URL, simple timer, and appearance colors."""
     
@@ -56,7 +71,6 @@ class ConfigDialog(QDialog):
         color_warning: str = FACTORY_DEFAULT_COLOR_WARNING,
         color_danger: str = FACTORY_DEFAULT_COLOR_DANGER,
         color_timer_background: list | None = None,
-        color_overlay_bar: list | None = None,
         parent=None,
     ):
         """Initialize configuration dialog."""
@@ -72,12 +86,11 @@ class ConfigDialog(QDialog):
         self.result_color_warning = color_warning if color_warning else FACTORY_DEFAULT_COLOR_WARNING
         self.result_color_danger = color_danger if color_danger else FACTORY_DEFAULT_COLOR_DANGER
         self.result_color_timer_background = list(color_timer_background) if color_timer_background and len(color_timer_background) == 4 else list(FACTORY_DEFAULT_COLOR_TIMER_BACKGROUND)
-        self.result_color_overlay_bar = list(color_overlay_bar) if color_overlay_bar and len(color_overlay_bar) == 4 else list(FACTORY_DEFAULT_COLOR_OVERLAY_BAR)
         self.setup_ui()
     
     def setup_ui(self):
         """Setup the dialog UI."""
-        self.setWindowTitle("Configure Ontime Server")
+        self.setWindowTitle("Configure FloatTime")
         self.setMinimumWidth(400)
         
         layout = QVBoxLayout()
@@ -143,6 +156,31 @@ class ConfigDialog(QDialog):
         colors_layout = QGridLayout()
         self._color_buttons = {}
         row_idx = 0
+        def add_color_patch(key, label_text, is_rgba):
+            nonlocal row_idx
+            colors_layout.addWidget(QLabel(label_text), row_idx, 0)
+            frame = CheckerboardFrame()
+            frame.setFixedSize(80, 28)
+            frame.setStyleSheet("CheckerboardFrame { border-radius: 4px; }")
+            frame_layout = QVBoxLayout(frame)
+            frame_layout.setContentsMargins(0, 0, 0, 0)
+            frame_layout.setSpacing(0)
+            btn = QPushButton()
+            btn.setFixedSize(80, 28)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            val = getattr(self, f"result_{key}")
+            if is_rgba:
+                btn.setStyleSheet("background-color: rgba({},{},{},{}); border: 1px solid #888; border-radius: 4px;".format(*val))
+            else:
+                btn.setStyleSheet(f"background-color: {val}; border: 1px solid #888; border-radius: 4px;")
+            btn.setProperty("_color_key", key)
+            btn.setProperty("_is_rgba", is_rgba)
+            btn.clicked.connect(self._on_color_clicked)
+            self._color_buttons[key] = btn
+            frame_layout.addWidget(btn)
+            colors_layout.addWidget(frame, row_idx, 1)
+            row_idx += 1
+
         # Timer label, clock label, warning, danger (hex)
         for key, label in [
             ("color_timer_label", "Timer label:"),
@@ -150,35 +188,9 @@ class ConfigDialog(QDialog):
             ("color_warning", "Warning color:"),
             ("color_danger", "Danger color:"),
         ]:
-            colors_layout.addWidget(QLabel(label), row_idx, 0)
-            btn = QPushButton()
-            btn.setFixedSize(80, 28)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            val = getattr(self, f"result_{key}")
-            btn.setStyleSheet(f"background-color: {val}; border: 1px solid #888; border-radius: 4px;")
-            btn.setProperty("_color_key", key)
-            btn.setProperty("_is_rgba", False)
-            btn.clicked.connect(self._on_color_clicked)
-            self._color_buttons[key] = btn
-            colors_layout.addWidget(btn, row_idx, 1)
-            row_idx += 1
-        # Timer background, overlay bar (RGBA)
-        for key, label in [
-            ("color_timer_background", "Timer background:"),
-            ("color_overlay_bar", "Control bar background:"),
-        ]:
-            colors_layout.addWidget(QLabel(label), row_idx, 0)
-            btn = QPushButton()
-            btn.setFixedSize(80, 28)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            val = getattr(self, f"result_{key}")
-            btn.setStyleSheet("background-color: rgba({},{},{},{}); border: 1px solid #888; border-radius: 4px;".format(*val))
-            btn.setProperty("_color_key", key)
-            btn.setProperty("_is_rgba", True)
-            btn.clicked.connect(self._on_color_clicked)
-            self._color_buttons[key] = btn
-            colors_layout.addWidget(btn, row_idx, 1)
-            row_idx += 1
+            add_color_patch(key, label, False)
+        # Timer background (RGBA)
+        add_color_patch("color_timer_background", "Timer background:", True)
         colors_group.setLayout(colors_layout)
         layout.addWidget(colors_group)
         
@@ -238,9 +250,8 @@ class ConfigDialog(QDialog):
         self.result_color_warning = FACTORY_DEFAULT_COLOR_WARNING
         self.result_color_danger = FACTORY_DEFAULT_COLOR_DANGER
         self.result_color_timer_background = list(FACTORY_DEFAULT_COLOR_TIMER_BACKGROUND)
-        self.result_color_overlay_bar = list(FACTORY_DEFAULT_COLOR_OVERLAY_BAR)
         for key, btn in self._color_buttons.items():
-            if key in ("color_timer_background", "color_overlay_bar"):
+            if key == "color_timer_background":
                 val = getattr(self, f"result_{key}")
                 btn.setStyleSheet("background-color: rgba({},{},{},{}); border: 1px solid #888; border-radius: 4px;".format(*val))
             else:
